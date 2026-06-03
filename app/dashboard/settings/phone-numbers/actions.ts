@@ -18,13 +18,14 @@ type UpdateInput = {
   label?: string
   color?: string
   is_active?: boolean
+  voicemail_greeting?: string | null
 }
 
 export async function getPhoneNumbers() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("phone_numbers")
-    .select("id, label, phone_number, color, is_active, created_at")
+    .select("id, label, phone_number, color, is_active, voicemail_greeting, created_at")
     .order("created_at", { ascending: true })
 
   return (data ?? []) as {
@@ -33,6 +34,7 @@ export async function getPhoneNumbers() {
     phone_number: string
     color: string
     is_active: boolean
+    voicemail_greeting: string | null
     created_at: string
   }[]
 }
@@ -80,7 +82,6 @@ export async function updatePhoneNumber(
 
   const supabase = await createClient()
 
-  // Guard: never deactivate the last active number.
   if (formData.is_active === false) {
     const { count } = await supabase
       .from("phone_numbers")
@@ -96,6 +97,9 @@ export async function updatePhoneNumber(
   if (formData.label !== undefined) patch.label = formData.label.trim()
   if (formData.color !== undefined) patch.color = formData.color.trim()
   if (formData.is_active !== undefined) patch.is_active = formData.is_active
+  if (formData.voicemail_greeting !== undefined) {
+    patch.voicemail_greeting = formData.voicemail_greeting?.trim() || null
+  }
 
   const { error } = await supabase
     .from("phone_numbers")
@@ -117,7 +121,6 @@ export async function deletePhoneNumber(
 
   const supabase = await createClient()
 
-  // Guard: never delete the last active number.
   const { data: target } = await supabase
     .from("phone_numbers")
     .select("is_active")
