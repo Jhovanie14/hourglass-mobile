@@ -77,21 +77,24 @@ function VoicemailPlayer({ callId }: { callId: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase
-      .from("voicemails")
-      .select("id, call_id, recording_url, duration_seconds, is_heard, created_at")
-      .eq("call_id", callId)
-      .maybeSingle()
-      .then(({ data }) => {
+    async function load() {
+      try {
+        const { data } = await supabase
+          .from("voicemails")
+          .select("id, call_id, recording_url, duration_seconds, is_heard, created_at")
+          .eq("call_id", callId)
+          .maybeSingle()
         setVoicemail(data as Voicemail | null)
-        setLoading(false)
         if (data && !data.is_heard) {
-          supabase
-            .from("voicemails")
-            .update({ is_heard: true })
-            .eq("call_id", callId)
+          supabase.from("voicemails").update({ is_heard: true }).eq("call_id", callId)
         }
-      })
+      } catch (err) {
+        console.error("Failed to fetch voicemail:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [callId, supabase])
 
   if (loading) return <Skeleton className="h-8 w-full max-w-sm" />
