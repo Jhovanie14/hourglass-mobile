@@ -308,10 +308,14 @@ async function handleRecordingSaved(
     return
   }
 
-  await supabase
+  const { error: flagError } = await supabase
     .from("calls")
     .update({ has_voicemail: true })
     .eq("id", call.id)
+
+  if (flagError) {
+    console.error("⚠️ Failed to set has_voicemail flag:", flagError)
+  }
 
   const pn = Array.isArray(call.phone_numbers)
     ? call.phone_numbers[0]
