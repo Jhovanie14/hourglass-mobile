@@ -1,15 +1,19 @@
+"use client"
+
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Hourglass, MoveLeft, Home } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export default function NotFound() {
+  const router = useRouter()
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
       <div className="flex max-w-md flex-col items-center space-y-6">
         {/* Animated Hourglass Icon Container */}
         <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-muted text-primary/80">
           <Hourglass className="h-12 w-12 animate-[spin_4s_linear_infinite]" />
-          <span className="text-foreground absolute -bottom-2 flex h-6 w-12 items-center justify-center rounded-full bg-destructive text-[10px] font-bold tracking-wider uppercase shadow-sm">
+          <span className="absolute -bottom-2 flex h-6 w-12 items-center justify-center rounded-full bg-destructive text-[10px] font-bold tracking-wider text-foreground uppercase shadow-sm">
             404
           </span>
         </div>
@@ -27,11 +31,13 @@ export default function NotFound() {
 
         {/* Action Buttons */}
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
-          <Button asChild variant="outline" className="gap-2">
-            <Link href="javascript:history.back()">
-              <MoveLeft className="h-4 w-4" />
-              Go Back
-            </Link>
+          <Button
+            onClick={() => router.back()}
+            variant="outline"
+            className="gap-2 shadow-sm"
+          >
+            <MoveLeft className="h-4 w-4" />
+            Go Back
           </Button>
 
           <Button asChild className="gap-2 shadow-sm">

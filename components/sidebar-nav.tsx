@@ -12,15 +12,25 @@ import {
 } from "@/components/ui/sidebar"
 import {
   LayoutDashboard,
+  MessageSquare,
+  Phone,
+  PhoneIncoming,
   UserPlus,
 } from "lucide-react"
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  {
+    label: "Conversations",
+    href: "/dashboard/conversations",
+    icon: MessageSquare,
+  },
+  { label: "Calls", href: "/dashboard/calls", icon: PhoneIncoming },
 ]
 
 const ADMIN_NAV_ITEMS = [
   { label: "Invite user", href: "/dashboard/invite", icon: UserPlus },
+  { label: "Phone numbers", href: "/dashboard/settings/phone-numbers", icon: Phone },
 ]
 
 export function SidebarNav({ isAdmin = false }: { isAdmin?: boolean }) {
@@ -33,20 +43,25 @@ export function SidebarNav({ isAdmin = false }: { isAdmin?: boolean }) {
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
-            {items.map((item) => (
-              <SidebarMenuItem key={item.href}>
-                <SidebarMenuButton
-                  asChild
-                  isActive={pathname === item.href}
-                  className="text-muted-foreground hover:text-foreground data-active:text-sidebar-accent-foreground rounded-lg gap-3 h-9"
-                >
-                  <Link href={item.href}>
-                    <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="text-sm">{item.label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            {items.map((item) => {
+              const isActive =
+                pathname === item.href ||
+                (item.href !== "/dashboard" && pathname.startsWith(item.href))
+              return (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive}
+                    className="h-9 gap-3 rounded-lg text-muted-foreground hover:text-foreground data-active:text-sidebar-accent-foreground "
+                  >
+                    <Link href={item.href}>
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span className="text-sm">{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )
+            })}
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>

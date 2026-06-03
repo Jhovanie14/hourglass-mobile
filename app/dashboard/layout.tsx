@@ -22,7 +22,7 @@ export default async function DashboardLayout({
           <AppSidebar />
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center justify-between border border-b px-4 py-4">
               <SidebarTrigger className="cursor-pointer text-muted-foreground hover:text-foreground" />
               <NotificationBell />
             </div>

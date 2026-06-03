@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { UserPlus } from "lucide-react"
+import { Phone, UserPlus } from "lucide-react"
 import { getCurrentUser, getCurrentRole } from "@/lib/auth"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { PasswordForm } from "./password-form"
@@ -24,7 +24,7 @@ function Section({
   )
 }
 
-export default async function SettingsPage() {
+export default async function ProfilePage() {
   const user = await getCurrentUser()
   const role = await getCurrentRole()
   const isAdmin = role === "admin"
@@ -34,10 +34,10 @@ export default async function SettingsPage() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Settings
+            Profile
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your account and preferences.
+            Manage your profile and preferences.
           </p>
         </div>
 
@@ -72,13 +72,22 @@ export default async function SettingsPage() {
             title="Admin"
             description="Tools available to administrators only."
           >
-            <Link
-              href="/dashboard/invite"
-              className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background/80 px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-            >
-              <UserPlus className="h-4 w-4" />
-              Invite a user
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/dashboard/invite"
+                className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background/80 px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                <UserPlus className="h-4 w-4" />
+                Invite a user
+              </Link>
+              <Link
+                href="/dashboard/settings/phone-numbers"
+                className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background/80 px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                <Phone className="h-4 w-4" />
+                Phone numbers
+              </Link>
+            </div>
           </Section>
         )}
       </div>

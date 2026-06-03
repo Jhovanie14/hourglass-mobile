@@ -54,9 +54,9 @@ export function UserMenu({ email }: { email: string }) {
               asChild
               className="cursor-pointer gap-2.5 text-sm text-foreground hover:bg-secondary hover:text-foreground focus:bg-secondary focus:text-foreground"
             >
-              <a href="/dashboard/settings">
+              <a href="/dashboard/profile">
                 <Settings className="h-3.5 w-3.5" />
-                Settings
+                Profile
               </a>
             </DropdownMenuItem>
 
