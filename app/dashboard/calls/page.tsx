@@ -14,7 +14,7 @@ export default async function CallsPage() {
     supabase
       .from("calls")
       .select(
-        "id, phone_number_id, contact_number, direction, status, duration_seconds, telnyx_call_id, started_at, ended_at, created_at, phone_numbers(id, label, phone_number, color)"
+        "id, phone_number_id, contact_number, direction, status, duration_seconds, telnyx_call_id, started_at, ended_at, created_at, has_voicemail, phone_numbers(id, label, phone_number, color)"
       )
       .order("created_at", { ascending: false })
       .limit(500),
@@ -33,16 +33,13 @@ export default async function CallsPage() {
     started_at: c.started_at,
     ended_at: c.ended_at,
     created_at: c.created_at,
+    has_voicemail: c.has_voicemail,
     phone_numbers: Array.isArray(c.phone_numbers)
       ? c.phone_numbers[0]
       : c.phone_numbers,
   }))
 
   return (
-    <CallsPageClient
-      phoneNumbers={phoneNumbers}
-      initialCalls={initialCalls}
-      
-    />
+    <CallsPageClient phoneNumbers={phoneNumbers} initialCalls={initialCalls} />
   )
 }
