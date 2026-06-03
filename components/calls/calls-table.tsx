@@ -1,12 +1,13 @@
 "use client"
 
-import { Fragment, useState } from "react"
+import { Fragment, useMemo, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { format, formatDistanceToNow } from "date-fns"
 import {
   ArrowDownLeft,
   ArrowUpRight,
   MessageSquare,
+  Mic,
   Phone,
   PhoneMissed,
 } from "lucide-react"
@@ -27,12 +28,14 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format-duration"
-import type { Call, StatusFilter } from "@/types/calls"
+import { createClient } from "@/lib/client"
+import type { Call, StatusFilter, Voicemail } from "@/types/calls"
 
 const STATUS_STYLES: Record<string, string> = {
   answered: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   completed: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   missed: "bg-destructive/15 text-destructive",
+  voicemail: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
   initiated: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
   declined: "bg-muted text-muted-foreground",
   failed: "bg-muted text-muted-foreground",
@@ -66,6 +69,43 @@ function isMissed(call: Call) {
 function durationCell(call: Call) {
   if (call.status === "missed" || call.status === "failed") return "—"
   return formatDuration(call.duration_seconds)
+}
+
+function VoicemailPlayer({ callId }: { callId: string }) {
+  const supabase = useMemo(() => createClient(), [])
+  const [voicemail, setVoicemail] = useState<Voicemail | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase
+      .from("voicemails")
+      .select("id, call_id, recording_url, duration_seconds, is_heard, created_at")
+      .eq("call_id", callId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setVoicemail(data as Voicemail | null)
+        setLoading(false)
+        if (data && !data.is_heard) {
+          supabase
+            .from("voicemails")
+            .update({ is_heard: true })
+            .eq("call_id", callId)
+        }
+      })
+  }, [callId, supabase])
+
+  if (loading) return <Skeleton className="h-8 w-full max-w-sm" />
+  if (!voicemail) return <span className="text-xs text-muted-foreground">No recording found</span>
+
+  return (
+    <div className="flex items-center gap-3">
+      <Mic className="h-4 w-4 shrink-0 text-purple-500" />
+      <audio controls className="h-8 flex-1 max-w-sm" src={voicemail.recording_url} />
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {formatDuration(voicemail.duration_seconds)}
+      </span>
+    </div>
+  )
 }
 
 export function CallsTable({
@@ -167,7 +207,12 @@ export function CallsTable({
                     )}
                   >
                     <TableCell>
-                      <DirectionIcon direction={call.direction} />
+                      <div className="flex items-center gap-1">
+                        <DirectionIcon direction={call.direction} />
+                        {call.has_voicemail && (
+                          <Mic className="h-3 w-3 text-purple-500" />
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="font-medium text-foreground">
@@ -247,26 +292,36 @@ export function CallsTable({
                   {open && (
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
                       <TableCell colSpan={7}>
-                        <dl className="grid gap-x-8 gap-y-1.5 px-2 py-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
-                          <DetailRow label="Telnyx Call ID" value={call.telnyx_call_id ?? "—"} mono />
-                          <DetailRow
-                            label="Started"
-                            value={
-                              call.started_at
-                                ? format(new Date(call.started_at), "PPpp")
-                                : "—"
-                            }
-                          />
-                          <DetailRow
-                            label="Ended"
-                            value={
-                              call.ended_at
-                                ? format(new Date(call.ended_at), "PPpp")
-                                : "—"
-                            }
-                          />
-                          <DetailRow label="Agent" value="—" />
-                        </dl>
+                        <div className="px-2 py-2 space-y-3">
+                          {call.has_voicemail && (
+                            <div>
+                              <p className="mb-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                Voicemail
+                              </p>
+                              <VoicemailPlayer callId={call.id} />
+                            </div>
+                          )}
+                          <dl className="grid gap-x-8 gap-y-1.5 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                            <DetailRow label="Telnyx Call ID" value={call.telnyx_call_id ?? "—"} mono />
+                            <DetailRow
+                              label="Started"
+                              value={
+                                call.started_at
+                                  ? format(new Date(call.started_at), "PPpp")
+                                  : "—"
+                              }
+                            />
+                            <DetailRow
+                              label="Ended"
+                              value={
+                                call.ended_at
+                                  ? format(new Date(call.ended_at), "PPpp")
+                                  : "—"
+                              }
+                            />
+                            <DetailRow label="Agent" value="—" />
+                          </dl>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}
@@ -306,8 +361,19 @@ export function CallsTable({
                     )}
                   </div>
                 </div>
-                <StatusBadge status={call.status} />
+                <div className="flex items-center gap-1.5">
+                  {call.has_voicemail && (
+                    <Mic className="h-3.5 w-3.5 text-purple-500" />
+                  )}
+                  <StatusBadge status={call.status} />
+                </div>
               </div>
+
+              {call.has_voicemail && (
+                <div className="mt-2">
+                  <VoicemailPlayer callId={call.id} />
+                </div>
+              )}
 
               <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                 <span>{format(new Date(call.created_at), "MMM d · p")}</span>
@@ -315,12 +381,7 @@ export function CallsTable({
               </div>
 
               <div className="mt-2 flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  className="flex-1"
-                >
+                <Button variant="outline" size="sm" disabled className="flex-1">
                   <Phone className="h-4 w-4" /> Call back
                 </Button>
                 <Button
