@@ -1,4 +1,5 @@
 import crypto from "crypto"
+import Telnyx from "telnyx"
 import { createClient } from "@/lib/server"
 
 export const runtime = "nodejs"
@@ -14,6 +15,9 @@ type TelnyxCallPayload = {
   start_time?: string
   end_time?: string
   connection_id?: string
+  // call.recording.saved fields
+  recording_url?: string
+  duration_ms?: number
 }
 
 type TelnyxVoiceWebhookBody = {
@@ -92,6 +96,12 @@ export async function POST(req: Request) {
     case "call.hangup":
       await handleCallHangup(supabase, payload)
       break
+    case "call.speak.ended":
+      await handleSpeakEnded(supabase, payload)
+      break
+    case "call.recording.saved":
+      await handleRecordingSaved(supabase, payload)
+      break
     default:
       console.log("ℹ️ Ignoring voice event:", event_type)
   }
@@ -106,8 +116,6 @@ async function handleCallInitiated(
   payload: TelnyxCallPayload
 ) {
   if (payload.direction === "outgoing") {
-    // Outbound call via WebRTC — look up our phone number by the `from` field
-    // and insert the record (there is no prior REST call to create it).
     const { data: phoneNumber } = await supabase
       .from("phone_numbers")
       .select("id")
@@ -133,7 +141,6 @@ async function handleCallInitiated(
     return
   }
 
-  // Inbound — find which of our numbers was dialled.
   const toNumber = payload.to
   const { data: phoneNumber } = await supabase
     .from("phone_numbers")
@@ -189,6 +196,8 @@ async function handleCallHangup(
   let finalStatus: string
   if (wasAnswered) {
     finalStatus = "completed"
+  } else if (call?.status === "voicemail") {
+    finalStatus = "voicemail"
   } else if (call?.direction === "inbound") {
     finalStatus = "missed"
   } else {
@@ -238,4 +247,91 @@ async function handleCallHangup(
       console.error("⚠️ Failed to insert missed_call notification:", error)
     }
   }
+}
+
+async function handleSpeakEnded(
+  supabase: SupabaseClient,
+  payload: TelnyxCallPayload
+) {
+  const { data: call } = await supabase
+    .from("calls")
+    .select("status")
+    .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
+
+  if (call?.status !== "voicemail") return
+
+  const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+
+  try {
+    await telnyx.calls.actions.startRecording(payload.call_control_id, {
+      format: "mp3",
+      channels: "single",
+    })
+    console.log(`🎙 Recording started for call ${payload.call_control_id}`)
+  } catch (err) {
+    console.error("⚠️ Failed to start recording:", err)
+  }
+}
+
+async function handleRecordingSaved(
+  supabase: SupabaseClient,
+  payload: TelnyxCallPayload
+) {
+  const recordingUrl = payload.recording_url
+  const durationMs = payload.duration_ms ?? 0
+
+  if (!recordingUrl) {
+    console.warn("⚠️ call.recording.saved has no recording_url")
+    return
+  }
+
+  const { data: call } = await supabase
+    .from("calls")
+    .select("id, contact_number, phone_number_id, phone_numbers(label)")
+    .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
+
+  if (!call) {
+    console.warn("⚠️ No call found for recording:", payload.call_control_id)
+    return
+  }
+
+  const { error: vmError } = await supabase.from("voicemails").insert({
+    call_id: call.id,
+    recording_url: recordingUrl,
+    duration_seconds: Math.round(durationMs / 1000),
+  })
+
+  if (vmError) {
+    console.error("⚠️ Failed to insert voicemail:", vmError)
+    return
+  }
+
+  await supabase
+    .from("calls")
+    .update({ has_voicemail: true })
+    .eq("id", call.id)
+
+  const pn = Array.isArray(call.phone_numbers)
+    ? call.phone_numbers[0]
+    : call.phone_numbers
+
+  const { error: notifError } = await supabase.from("notifications").insert({
+    type: "voicemail",
+    reference_id: call.id,
+    metadata: {
+      contact_number: call.contact_number,
+      phone_label: (pn as { label: string } | null)?.label ?? "Unknown",
+      duration_seconds: Math.round(durationMs / 1000),
+    },
+  })
+
+  if (notifError) {
+    console.error("⚠️ Failed to insert voicemail notification:", notifError)
+  }
+
+  console.log(
+    `📬 Voicemail saved for call ${call.id}, duration: ${Math.round(durationMs / 1000)}s`
+  )
 }
