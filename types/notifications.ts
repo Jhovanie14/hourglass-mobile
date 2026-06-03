@@ -1,10 +1,11 @@
-export type NotificationType = "missed_call" | "unread_message"
+export type NotificationType = "missed_call" | "unread_message" | "voicemail"
 
 export type NotificationMetadata = {
   contact_number: string
   phone_label: string
-  phone_color?: string   // present on missed_call
-  last_message?: string  // present on unread_message
+  phone_color?: string    // present on missed_call
+  last_message?: string   // present on unread_message
+  duration_seconds?: number // present on voicemail
 }
 
 export type Notification = {

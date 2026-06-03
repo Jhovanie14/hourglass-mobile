@@ -4,6 +4,7 @@ export type PhoneNumber = {
   phone_number: string
   color: string
   is_active: boolean
+  voicemail_greeting?: string | null
 }
 
 /** Full row including timestamps — used by the admin settings page. */
