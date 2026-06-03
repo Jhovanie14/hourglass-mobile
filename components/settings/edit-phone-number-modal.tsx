@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Tooltip,
   TooltipContent,
@@ -32,21 +33,21 @@ export function EditPhoneNumberModal({
   phoneNumber: PhoneNumberRecord | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Colors used by OTHER numbers (excludes this one). */
   usedColors: string[]
 }) {
   const [label, setLabel] = useState("")
   const [color, setColor] = useState("")
   const [active, setActive] = useState(true)
+  const [greeting, setGreeting] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  // Hydrate the form when a row is opened for editing.
   useEffect(() => {
     if (open && phoneNumber) {
       setLabel(phoneNumber.label)
       setColor(phoneNumber.color)
       setActive(phoneNumber.is_active)
+      setGreeting(phoneNumber.voicemail_greeting ?? "")
       setError(null)
     }
   }, [open, phoneNumber])
@@ -63,6 +64,7 @@ export function EditPhoneNumberModal({
       label,
       color,
       is_active: active,
+      voicemail_greeting: greeting || null,
     })
 
     setPending(false)
@@ -82,7 +84,7 @@ export function EditPhoneNumberModal({
         <DialogHeader>
           <DialogTitle>Edit Phone Number</DialogTitle>
           <DialogDescription>
-            Update the label, color, or active status.
+            Update the label, color, voicemail greeting, or active status.
           </DialogDescription>
         </DialogHeader>
 
@@ -128,6 +130,24 @@ export function EditPhoneNumberModal({
           <div className="space-y-1.5">
             <span className="text-sm font-medium text-foreground/80">Color</span>
             <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
+          </div>
+
+          {/* Voicemail Greeting */}
+          <div className="space-y-1.5">
+            <label htmlFor="edit-greeting" className="text-sm font-medium text-foreground/80">
+              Voicemail Greeting
+            </label>
+            <Textarea
+              id="edit-greeting"
+              value={greeting}
+              onChange={(e) => setGreeting(e.target.value)}
+              placeholder="Hi, you've reached our team. We're unavailable right now. Please leave a message after the tone."
+              rows={3}
+              maxLength={300}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to use the default greeting.
+            </p>
           </div>
 
           {/* Active */}
