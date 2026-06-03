@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, MessageSquare, Phone } from "lucide-react"
+import { Bell, MessageSquare, Mic, Phone } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { createClient } from "@/lib/client"
 import {
@@ -10,6 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { formatDuration } from "@/lib/format-duration"
 import type { Notification } from "@/types/notifications"
 
 export function NotificationBell() {
@@ -57,7 +58,7 @@ export function NotificationBell() {
         .update({ is_read: true })
         .eq("id", notification.id)
 
-      if (notification.type === "missed_call") {
+      if (notification.type === "missed_call" || notification.type === "voicemail") {
         router.push("/dashboard/calls")
       } else {
         router.push(`/dashboard/conversations?id=${notification.reference_id}`)
@@ -68,6 +69,7 @@ export function NotificationBell() {
 
   const missedCalls = notifications.filter((n) => n.type === "missed_call")
   const unreadMessages = notifications.filter((n) => n.type === "unread_message")
+  const voicemails = notifications.filter((n) => n.type === "voicemail")
   const totalCount = notifications.length
 
   return (
@@ -111,6 +113,38 @@ export function NotificationBell() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {n.metadata.phone_label} &middot;{" "}
+                        {formatDistanceToNow(new Date(n.created_at), {
+                          addSuffix: true,
+                        })}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {voicemails.length > 0 && (
+              <div>
+                <p className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Voicemails
+                </p>
+                {voicemails.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => handleClick(n)}
+                    className="flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-muted"
+                  >
+                    <Mic className="mt-0.5 h-4 w-4 shrink-0 text-purple-500" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {n.metadata.contact_number}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {n.metadata.phone_label}
+                        {n.metadata.duration_seconds
+                          ? ` · ${formatDuration(n.metadata.duration_seconds)}`
+                          : ""}
+                        {" · "}
                         {formatDistanceToNow(new Date(n.created_at), {
                           addSuffix: true,
                         })}
