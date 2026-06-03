@@ -2,6 +2,8 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/server"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
+import { WebRTCProvider } from "@/components/calls/webrtc-provider"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 
 export default async function DashboardLayout({
   children,
@@ -11,19 +13,24 @@ export default async function DashboardLayout({
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()
   if (!data?.claims) {
-    redirect('/auth/login')
+    redirect("/auth/login")
   }
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
-        <AppSidebar />
+      <WebRTCProvider>
+        <div className="flex min-h-screen w-full bg-background">
+          <AppSidebar />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <SidebarTrigger className="mx-4 my-3 cursor-pointer text-muted-foreground hover:text-foreground" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center justify-between px-4 py-3">
+              <SidebarTrigger className="cursor-pointer text-muted-foreground hover:text-foreground" />
+              <NotificationBell />
+            </div>
 
-          <main className="flex-1 overflow-y-auto">{children}</main>
+            <main className="flex-1 overflow-y-auto">{children}</main>
+          </div>
         </div>
-      </div>
+      </WebRTCProvider>
     </SidebarProvider>
   )
 }
