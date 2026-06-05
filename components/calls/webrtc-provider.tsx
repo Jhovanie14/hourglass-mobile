@@ -73,7 +73,10 @@ function useRingtone() {
 function useDuration(active: boolean) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
-    if (!active) { setSeconds(0); return }
+    if (!active) {
+      setSeconds(0)
+      return
+    }
     const id = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => clearInterval(id)
   }, [active])
@@ -85,7 +88,9 @@ function useDuration(active: boolean) {
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 export function WebRTCProvider({ children }: { children: React.ReactNode }) {
-  const clientRef = useRef<InstanceType<typeof import("@telnyx/webrtc").TelnyxRTC> | null>(null)
+  const clientRef = useRef<InstanceType<
+    typeof import("@telnyx/webrtc").TelnyxRTC
+  > | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement>(null)
 
   const [isReady, setIsReady] = useState(false)
@@ -97,9 +102,14 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
   const [speakText, setSpeakText] = useState("")
   const [speaking, setSpeaking] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
+  const activeCallRef = useRef<TelnyxCall | null>(null)
 
   const { start: startRing, stop: stopRing } = useRingtone()
   const duration = useDuration(!!activeCall)
+
+  useEffect(() => {
+    activeCallRef.current = activeCall
+  }, [activeCall])
 
   useEffect(() => {
     let mounted = true
@@ -109,59 +119,81 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
 
       const res = await fetch("/api/calls/webrtc-token")
       if (!res.ok) {
-        console.warn("WebRTC: could not fetch credentials — is TELNYX_CREDENTIAL_CONNECTION_ID set?")
+        console.warn(
+          "WebRTC: could not fetch credentials — is TELNYX_CREDENTIAL_CONNECTION_ID set?"
+        )
         return
       }
-      const { token } = await res.json()
-      if (!mounted || !token) return
+      const { login, password } = await res.json()
+      if (!mounted || !login || !password) return
 
-      const client = new TelnyxRTC({ login_token: token })
+      const client = new TelnyxRTC({ login, password })
       clientRef.current = client
 
       client.on("telnyx.ready", () => {
+        console.log("✅ TelnyxRTC ready — SIP registered")
         if (mounted) setIsReady(true)
       })
 
-      client.on("telnyx.notification", (notification: { type: string; call?: TelnyxCall }) => {
-        if (!mounted || notification.type !== "callUpdate") return
-        const call = notification.call
-        if (!call) return
-        const state = call.state
+      client.on("telnyx.error", (err: unknown) => {
+        console.error("❌ TelnyxRTC error:", err)
+      })
 
-        const isTerminated = state === "hangup" || state === "destroy" || state === "purge"
+      client.on(
+        "telnyx.notification",
+        (notification: { type: string; call?: TelnyxCall }) => {
+          console.log(
+            "🔔 Telnyx notification:",
+            notification.type,
+            (notification.call as any)?.state,
+            (notification.call as any)?.direction
+          )
+          if (!mounted || notification.type !== "callUpdate") return
+          const call = notification.call
+          if (!call) return
+          const state = call.state
 
-        if (isTerminated) {
-          setActiveCall(null)
+          const isTerminated =
+            state === "hangup" || state === "destroy" || state === "purge"
+
+          if (isTerminated) {
+            setActiveCall(null)
+            setIncomingCall(null)
+            setCallState("")
+            setMuted(false)
+            setSpeakText("")
+            stopRing()
+            if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null
+            return
+          }
+
+          // "new" fires before direction is known — skip it to avoid prematurely
+          // setting activeCall, which would block the incoming popup at "ringing"
+          if (state === "new") return
+
+          // Inbound: show incoming call popup while ringing
+          if (state === "ringing" && call.direction !== "outbound") {
+            if (activeCallRef.current) return
+            setIncomingCall(call)
+            startRing()
+            return
+          }
+
+          // Any non-terminated state — show the HUD (outbound "trying"/"ringing" shows "Calling…")
+          setActiveCall(call)
+          setCallState(state)
           setIncomingCall(null)
-          setCallState("")
-          setMuted(false)
-          setSpeakText("")
-          stopRing()
-          if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null
-          return
-        }
 
-        // Inbound: show incoming call popup while ringing
-        if (call.direction === "inbound" && (state === "new" || state === "ringing")) {
-          setIncomingCall(call)
-          startRing()
-          return
-        }
-
-        // Any non-terminated state — show the HUD (outbound "trying"/"ringing" shows "Calling…")
-        setActiveCall(call)
-        setCallState(state)
-        setIncomingCall(null)
-
-        if (state === "active") {
-          stopRing()
-          setMuted(false)
-          if (remoteAudioRef.current && call.remoteStream) {
-            remoteAudioRef.current.srcObject = call.remoteStream
-            remoteAudioRef.current.play().catch(() => {})
+          if (state === "active") {
+            stopRing()
+            setMuted(false)
+            if (remoteAudioRef.current && call.remoteStream) {
+              remoteAudioRef.current.srcObject = call.remoteStream
+              remoteAudioRef.current.play().catch(() => {})
+            }
           }
         }
-      })
+      )
 
       client.connect()
     }
@@ -171,7 +203,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
       mounted = false
       clientRef.current?.disconnect()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const makeCall = useCallback(
@@ -229,7 +261,10 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     await fetch("/api/calls/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ call_control_id: callControlId, text: speakText.trim() }),
+      body: JSON.stringify({
+        call_control_id: callControlId,
+        text: speakText.trim(),
+      }),
     })
     setSpeaking(false)
     setSpeakText("")
@@ -255,18 +290,20 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
 
       {/* ── Incoming call popup ── */}
       {incomingCall && !activeCall && (
-        <div className="fixed bottom-6 right-6 z-50 w-72 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="fixed right-6 bottom-6 z-50 w-72 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
           <div className="flex items-center gap-3 bg-green-500/10 px-4 py-3">
             <span className="relative flex h-3 w-3">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500" />
             </span>
-            <span className="text-xs font-semibold uppercase tracking-widest text-green-600 dark:text-green-400">
+            <span className="text-xs font-semibold tracking-widest text-green-600 uppercase dark:text-green-400">
               Incoming Call
             </span>
           </div>
           <div className="px-4 py-3">
-            <p className="text-lg font-semibold tabular-nums tracking-tight">{callerNumber}</p>
+            <p className="text-lg font-semibold tracking-tight tabular-nums">
+              {callerNumber}
+            </p>
           </div>
           <div className="flex gap-2 border-t border-border px-4 py-3">
             <button
@@ -291,7 +328,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
 
       {/* ── Active call HUD ── */}
       {activeCall && (
-        <div className="fixed bottom-6 right-6 z-50 w-80 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="fixed right-6 top-6 z-50 w-80 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
           {/* Header */}
           <div className="flex items-center justify-between bg-green-500/10 px-4 py-3">
             <div className="flex items-center gap-2">
@@ -299,12 +336,18 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
               </span>
-              <span className="text-xs font-semibold uppercase tracking-widest text-green-600 dark:text-green-400">
-                {callState === "active" ? "Active Call" : callState === "ringing" ? "Ringing…" : "Calling…"}
+              <span className="text-xs font-semibold tracking-widest text-green-600 uppercase dark:text-green-400">
+                {callState === "active"
+                  ? "Active Call"
+                  : callState === "ringing"
+                    ? "Ringing…"
+                    : "Calling…"}
               </span>
             </div>
             {callState === "active" && (
-              <span className="font-mono text-sm tabular-nums text-muted-foreground">{duration}</span>
+              <span className="font-mono text-sm text-muted-foreground tabular-nums">
+                {duration}
+              </span>
             )}
           </div>
 
@@ -313,26 +356,30 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* TTS speak — only available once the call is connected */}
-          {callState === "active" && <div className="border-t border-border px-4 py-3">
-            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Speak on call (TTS)</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={speakText}
-                onChange={(e) => setSpeakText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSpeak()}
-                placeholder="Type message…"
-                className="border-input bg-background text-foreground min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              <button
-                onClick={handleSpeak}
-                disabled={!speakText.trim() || speaking}
-                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-              >
-                {speaking ? "…" : "Speak"}
-              </button>
+          {callState === "active" && (
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                Speak on call (TTS)
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={speakText}
+                  onChange={(e) => setSpeakText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSpeak()}
+                  placeholder="Type message…"
+                  className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:ring-1 focus:ring-ring focus:outline-none"
+                />
+                <button
+                  onClick={handleSpeak}
+                  disabled={!speakText.trim() || speaking}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {speaking ? "…" : "Speak"}
+                </button>
+              </div>
             </div>
-          </div>}
+          )}
 
           {/* Controls */}
           <div className="flex gap-2 border-t border-border px-4 py-3">
@@ -344,7 +391,11 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
                   : "bg-muted text-foreground hover:bg-muted/80"
               }`}
             >
-              {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              {muted ? (
+                <MicOff className="h-4 w-4" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
               {muted ? "Unmute" : "Mute"}
             </button>
             <button

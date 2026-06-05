@@ -40,7 +40,7 @@ export function RecentCalls({ calls }: { calls: CallWithInbox[] }) {
         <CardTitle>Recent Calls</CardTitle>
       </CardHeader>
 
-      <CardContent className="px-0">
+      <CardContent className="px-0 flex-1">
         {calls.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
             <Phone className="h-8 w-8 text-muted-foreground/50" />

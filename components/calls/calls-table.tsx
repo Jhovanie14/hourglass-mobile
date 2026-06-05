@@ -305,7 +305,7 @@ export function CallsTable({
                             </div>
                           )}
                           <dl className="grid gap-x-8 gap-y-1.5 text-xs sm:grid-cols-2 lg:grid-cols-4">
-                            <DetailRow label="Telnyx Call ID" value={call.telnyx_call_id ?? "—"} mono />
+                            <DetailRow label="Telnyx Call ID" value={call.telnyx_call_id?.slice(0, 24) ?? "—"} mono />
                             <DetailRow
                               label="Started"
                               value={

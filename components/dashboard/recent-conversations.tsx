@@ -34,7 +34,7 @@ export function RecentConversations({
         <CardTitle>Recent Conversations</CardTitle>
       </CardHeader>
 
-      <CardContent className="px-0">
+      <CardContent className="px-0 flex-1">
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
             <MessageSquare className="h-8 w-8 text-muted-foreground/50" />

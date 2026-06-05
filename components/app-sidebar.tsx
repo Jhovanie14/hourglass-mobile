@@ -1,5 +1,6 @@
 import {
   Sidebar,
+  SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarSeparator,
@@ -20,52 +21,33 @@ export async function AppSidebar() {
   const admin = await isAdmin()
 
   return (
-    <Sidebar className="border-r border-sidebar-border bg-sidebar">
+    <Sidebar
+      className="border-r border-sidebar-border bg-sidebar"
+      collapsible="icon"
+    >
       {/* Logo */}
-      <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
+      <SidebarHeader className="border-b border-sidebar-border px-4 py-4 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-4">
         <Link
           href="/dashboard"
-          className="flex cursor-pointer items-center gap-2.5"
+          className="flex cursor-pointer items-center gap-2.5 group-data-[collapsible=icon]:justify-center"
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary shadow-md shadow-primary/20">
             <Mail className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="text-base font-bold tracking-tight text-sidebar-foreground uppercase">
+          <span className="overflow-hidden text-base font-bold tracking-tight text-sidebar-foreground uppercase transition-[width,opacity] duration-200 ease-linear group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
             Hourglass mobile
           </span>
         </Link>
       </SidebarHeader>
 
       {/* Nav — client component so asChild + Link works without hydration errors */}
-      <SidebarNav isAdmin={admin} />
+      <SidebarContent>
+        <SidebarNav isAdmin={admin} />
+      </SidebarContent>
 
+      <SidebarSeparator className="mx-0 bg-sidebar-border group-data-[collapsible=icon]:hidden" />
       {/* Footer */}
-      <SidebarFooter className="space-y-3 px-3 pb-4">
-        <SidebarSeparator className="bg-sidebar-border" />
-
-        {/* <div className="p-3.5 bg-secondary/80 border border-border/60 rounded-xl">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-sidebar-foreground">Credits</span>
-            <span className="text-xs font-bold text-primary">{credits.toLocaleString()}</span>
-          </div>
-          <div className="w-full bg-border rounded-full h-1.5 mb-2.5">
-            <div
-              className="bg-primary h-1.5 rounded-full transition-all"
-              style={{ width: `${creditPct}%` }}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground capitalize">{plan} plan</span>
-            <Link
-              href="/dashboard/settings"
-              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
-            >
-              <Zap className="w-3 h-3" />
-              Upgrade
-            </Link>
-          </div>
-        </div> */}
-
+      <SidebarFooter>
         <UserMenu email={user!.email!} />
       </SidebarFooter>
     </Sidebar>

@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { deleteMessage, resendMessage } from "@/app/dashboard/conversations/actions"
 import { MessageBubble } from "./message-bubble"
 import type {
   Conversation,
@@ -34,6 +35,8 @@ export function ChatView({
   loading,
   sending,
   onSend,
+  onDeleteMessage,
+  onResendMessage,
 }: {
   conversation: Conversation | null
   phoneNumber: PhoneNumber | null
@@ -41,6 +44,8 @@ export function ChatView({
   loading?: boolean
   sending?: boolean
   onSend: (body: string) => void
+  onDeleteMessage?: (id: string) => void
+  onResendMessage?: (message: Message) => void
 }) {
   const [draft, setDraft] = useState("")
   const [showJump, setShowJump] = useState(false)
@@ -75,6 +80,16 @@ export function ChatView({
     const nearBottom =
       el.scrollHeight - el.scrollTop - el.clientHeight < 120
     if (nearBottom) setShowJump(false)
+  }
+
+  async function handleDelete(id: string) {
+    onDeleteMessage?.(id)
+    await deleteMessage(id)
+  }
+
+  async function handleResend(message: Message) {
+    onResendMessage?.(message)
+    await resendMessage(message.id)
   }
 
   function submit() {
@@ -135,7 +150,7 @@ export function ChatView({
         <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" disabled aria-label="Call">
+              <Button variant="ghost" size="icon" aria-label="Call">
                 <Phone className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -146,6 +161,7 @@ export function ChatView({
             size="icon"
             disabled
             aria-label="More options"
+            onClick={() => {}}
           >
             <MoreVertical className="h-4 w-4" />
           </Button>
@@ -187,9 +203,9 @@ export function ChatView({
                   key={m.id}
                   message={m}
                   color={color}
-                  grouped={
-                    i > 0 && messages[i - 1].direction === m.direction
-                  }
+                  grouped={i > 0 && messages[i - 1].direction === m.direction}
+                  onDelete={handleDelete}
+                  onResend={handleResend}
                 />
               ))}
               <div ref={bottomRef} />

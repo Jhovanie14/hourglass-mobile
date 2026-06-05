@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter, usePathname } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { createClient } from "@/lib/client"
 import { cn } from "@/lib/utils"
@@ -27,10 +28,20 @@ export function ConversationsLayout({
   prefillInbox?: string
 }) {
   const supabase = useMemo(() => createClient(), [])
+  const router = useRouter()
+  const pathname = usePathname()
 
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations)
-  const [selectedInbox, setSelectedInbox] = useState<string>(ALL_INBOXES)
+  const [selectedInbox, setSelectedInbox] = useState<string>(prefillInbox ?? ALL_INBOXES)
+
+  const switchInbox = useCallback((id: string) => {
+    setSelectedInbox(id)
+    const params = new URLSearchParams()
+    if (id !== ALL_INBOXES) params.set("inbox", id)
+    router.replace(`${pathname}${params.size ? `?${params}` : ""}`)
+  }, [router, pathname])
+  
   const [selected, setSelected] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -38,6 +49,7 @@ export function ConversationsLayout({
   // Open the compose modal automatically when arriving with a prefilled contact
   // (e.g. "Send SMS" from the Calls page).
   const [composeOpen, setComposeOpen] = useState(Boolean(prefillContact))
+
 
   const phoneById = useMemo(() => {
     const map: Record<string, PhoneNumber> = {}
@@ -204,7 +216,7 @@ export function ConversationsLayout({
         <InboxSwitcher
           phoneNumbers={phoneNumbers}
           selected={selectedInbox}
-          onSelect={(id) => setSelectedInbox(id)}
+          onSelect={switchInbox}
           unreadByInbox={unreadByInbox}
         />
       </div>
@@ -242,6 +254,8 @@ export function ConversationsLayout({
             loading={loadingMessages}
             sending={sending}
             onSend={handleSend}
+            onDeleteMessage={(id) => setMessages((prev) => prev.filter((m) => m.id !== id))}
+            onResendMessage={(msg) => setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, status: "queued" } : m))}
           />
         </div>
       </div>

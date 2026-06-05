@@ -27,14 +27,14 @@ export function UserMenu({ email }: { email: string }) {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton className="h-10 cursor-pointer gap-3 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground data-[state=open]:bg-secondary data-[state=open]:text-foreground">
+            <SidebarMenuButton className="h-10 cursor-pointer gap-3 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground data-[state=open]:bg-secondary data-[state=open]:text-foreground group-data-[collapsible=icon]:justify-center">
               <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/20">
                 <span className="text-[10px] font-bold text-primary">
                   {initials}
                 </span>
               </div>
-              <span className="flex-1 truncate text-xs">{email}</span>
-              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              <span className="flex-1 truncate text-xs group-data-[collapsible=icon]:hidden">{email}</span>
+              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 group-data-[collapsible=icon]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
 

@@ -99,6 +99,8 @@ export async function sendMessage(input: SendMessageInput): Promise<SendResult> 
     })
 
     if (!res.ok) {
+      const errBody = await res.json().catch(() => null)
+      console.error(`⚠️ Telnyx SMS error (${res.status}):`, JSON.stringify(errBody))
       await supabase
         .from("messages")
         .update({ status: "delivery_failed" })
@@ -177,6 +179,94 @@ export async function getOrCreateConversation(
   }
 
   return { ok: true, conversationId: created.id }
+}
+
+export async function deleteMessage(
+  messageId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { data: claims } = await supabase.auth.getClaims()
+  if (!claims?.claims) return { ok: false, error: "Not signed in." }
+
+  const { error } = await supabase
+    .from("messages")
+    .delete()
+    .eq("id", messageId)
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export async function resendMessage(
+  messageId: string
+): Promise<SendResult> {
+  const supabase = await createClient()
+  const { data: claims } = await supabase.auth.getClaims()
+  if (!claims?.claims) return { ok: false, error: "Not signed in." }
+
+  const { data: msg } = await supabase
+    .from("messages")
+    .select("id, conversation_id, phone_number_id, body, direction, status")
+    .eq("id", messageId)
+    .single()
+
+  if (!msg) return { ok: false, error: "Message not found." }
+  if (msg.status !== "delivery_failed") return { ok: false, error: "Only failed messages can be resent." }
+
+  const { data: conv } = await supabase
+    .from("conversations")
+    .select("contact_number")
+    .eq("id", msg.conversation_id)
+    .single()
+
+  if (!conv) return { ok: false, error: "Conversation not found." }
+
+  const { data: phoneNumber } = await supabase
+    .from("phone_numbers")
+    .select("phone_number")
+    .eq("id", msg.phone_number_id)
+    .single()
+
+  if (!phoneNumber) return { ok: false, error: "Phone number not found." }
+
+  await supabase.from("messages").update({ status: "queued" }).eq("id", messageId)
+
+  const apiKey = process.env.TELNYX_API_KEY
+  if (!apiKey) return { ok: false, error: "TELNYX_API_KEY not set." }
+
+  const res = await fetch("https://api.telnyx.com/v2/messages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: phoneNumber.phone_number,
+      to: conv.contact_number,
+      text: msg.body,
+    }),
+  })
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null)
+    console.error(`⚠️ Telnyx resend error (${res.status}):`, JSON.stringify(errBody))
+    await supabase.from("messages").update({ status: "delivery_failed" }).eq("id", messageId)
+    return { ok: false, error: `Telnyx error (${res.status}).` }
+  }
+
+  const json = (await res.json()) as { data?: { id?: string } }
+  const { data: updated } = await supabase
+    .from("messages")
+    .update({
+      status: "sent",
+      telnyx_message_id: json.data?.id ?? null,
+      sent_at: new Date().toISOString(),
+    })
+    .eq("id", messageId)
+    .select("id, conversation_id, phone_number_id, direction, body, media_urls, status, telnyx_message_id, sent_at, created_at")
+    .single()
+
+  return { ok: true, message: updated as Message }
 }
 
 async function touchConversation(

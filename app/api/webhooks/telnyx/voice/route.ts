@@ -1,6 +1,6 @@
 import crypto from "crypto"
 import Telnyx from "telnyx"
-import { createClient } from "@/lib/server"
+import { createAdminClient } from "@/lib/admin"
 
 export const runtime = "nodejs"
 
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     to: payload.to,
   })
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   switch (event_type) {
     case "call.initiated":
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
   return Response.json({ ok: true })
 }
 
-type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+type SupabaseClient = ReturnType<typeof createAdminClient>
 
 async function handleCallInitiated(
   supabase: SupabaseClient,
@@ -154,7 +154,7 @@ async function handleCallInitiated(
     return
   }
 
-  await supabase.from("calls").upsert(
+  const { data: inserted, error: insertError } = await supabase.from("calls").upsert(
     {
       phone_number_id: phoneNumber.id,
       contact_number: payload.from,
@@ -163,7 +163,13 @@ async function handleCallInitiated(
       telnyx_call_id: payload.call_control_id,
     },
     { onConflict: "telnyx_call_id", ignoreDuplicates: true }
-  )
+  ).select("id, created_at").maybeSingle()
+
+  if (insertError) {
+    console.error("⚠️ Failed to insert inbound call:", insertError)
+  } else {
+    console.log(`📥 Inbound call inserted: id=${inserted?.id} created_at=${inserted?.created_at}`)
+  }
 }
 
 async function handleCallAnswered(

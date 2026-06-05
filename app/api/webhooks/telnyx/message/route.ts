@@ -1,5 +1,5 @@
 import crypto from "crypto"
-import { createClient } from "@/lib/server"
+import { createAdminClient } from "@/lib/admin"
 
 // Use the default Node.js runtime so `crypto` is available for Ed25519
 // signature verification. Do NOT switch this to the edge runtime.
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
     console.log("📨 Telnyx webhook received:", event_type)
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     switch (event_type) {
       case "message.received":
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
   }
 }
 
-type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+type SupabaseClient = ReturnType<typeof createAdminClient>
 type TelnyxPayload = TelnyxWebhookBody["data"]["payload"]
 
 async function handleMessageReceived(
