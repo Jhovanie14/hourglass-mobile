@@ -6,7 +6,7 @@ import { createClient } from "@/lib/client"
 
 type InboundRecord = {
   callId: string
-  phoneNumber: { label: string; phone_number: string } | null
+  phoneNumber: { label: string; phone_number: string }
 }
 
 export function useCallRecords() {
@@ -101,7 +101,7 @@ export function useCallRecords() {
   async function markMissed(callId: string): Promise<void> {
     const { error } = await supabase
       .from("calls")
-      .update({ status: "missed" })
+      .update({ status: "missed", ended_at: new Date().toISOString() })
       .eq("id", callId)
 
     if (error) console.error("⚠️ [call-records] Failed to mark missed:", error)
