@@ -25,7 +25,7 @@ export function NewCallDialog({ phoneNumbers }: { phoneNumbers: PhoneNumber[] })
 
   function handleCall() {
     if (!to.trim() || !selectedPhone) return
-    makeCall(to.trim(), selectedPhone.phone_number)
+    makeCall(to.trim(), selectedPhone)
     toast.success("Calling " + to.trim())
     setOpen(false)
     setTo("")
