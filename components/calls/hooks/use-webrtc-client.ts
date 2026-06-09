@@ -1,7 +1,7 @@
 // components/calls/hooks/use-webrtc-client.ts
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { RefObject } from "react"
 import type { Call as TelnyxCall } from "@telnyx/webrtc"
 
@@ -53,7 +53,7 @@ export function useWebRTCClient(
           (n.call as any)?.state,
           (n.call as any)?.direction
         )
-        onNotificationRef.current(n)
+        if (mounted) onNotificationRef.current(n)
       })
 
       client.connect()
@@ -63,19 +63,31 @@ export function useWebRTCClient(
 
     return () => {
       mounted = false
-      clientRef.current?.disconnect()
+      const c = clientRef.current
+      if (c) {
+        // @ts-ignore
+        c.off("telnyx.ready")
+        // @ts-ignore
+        c.off("telnyx.error")
+        // @ts-ignore
+        c.off("telnyx.notification")
+        c.disconnect()
+      }
     }
   }, [])
 
-  function newCall(to: string, callerNumber: string): TelnyxCall | null {
-    const client = clientRef.current
-    if (!client || !isReady) return null
-    return client.newCall({
-      destinationNumber: to,
-      callerNumber,
-      remoteElement: audioRef.current ?? undefined,
-    })
-  }
+  const newCall = useCallback(
+    (to: string, callerNumber: string): TelnyxCall | null => {
+      const client = clientRef.current
+      if (!client || !isReady) return null
+      return client.newCall({
+        destinationNumber: to,
+        callerNumber,
+        remoteElement: audioRef.current ?? undefined,
+      })
+    },
+    [isReady, audioRef]
+  )
 
   return { isReady, newCall }
 }
