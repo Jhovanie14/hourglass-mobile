@@ -134,5 +134,8 @@ export function useCallRecords() {
     [supabase]
   )
 
-  return { insertInbound, insertOutbound, markAnswered, markCompleted, markMissed, markFailed }
+  return useMemo(
+    () => ({ insertInbound, insertOutbound, markAnswered, markCompleted, markMissed, markFailed }),
+    [insertInbound, insertOutbound, markAnswered, markCompleted, markMissed, markFailed]
+  )
 }

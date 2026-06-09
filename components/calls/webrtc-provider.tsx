@@ -21,12 +21,12 @@ import type { PhoneNumber } from "@/types/calls"
 
 type WebRTCContextType = {
   isReady: boolean
-  makeCall: (to: string, phoneNumber: PhoneNumber) => void
+  makeCall: (to: string, phoneNumber: PhoneNumber) => Promise<void>
 }
 
 const WebRTCContext = createContext<WebRTCContextType>({
   isReady: false,
-  makeCall: () => {},
+  makeCall: async () => {},
 })
 
 export function useWebRTC() {
@@ -164,20 +164,19 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
   // ── makeCall ──────────────────────────────────────────────────────────────
 
   const makeCall = useCallback(
-    (to: string, phoneNumber: PhoneNumber) => {
-      records.insertOutbound(phoneNumber.id, to).then((callId) => {
-        if (callId) {
-          activeCallIdRef.current = callId
-          activeCallDirRef.current = "outbound"
-        }
-      })
+    async (to: string, phoneNumber: PhoneNumber) => {
+      const callId = await records.insertOutbound(phoneNumber.id, to)
+      if (callId) {
+        activeCallIdRef.current = callId
+        activeCallDirRef.current = "outbound"
+      }
       const call = newCall(to, phoneNumber.phone_number)
       if (call) {
         setActiveCall(call)
         setCallState("trying")
       }
     },
-    [isReady, newCall, records]
+    [records, newCall]
   )
 
   // ── Call actions ──────────────────────────────────────────────────────────
@@ -201,7 +200,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
       if (insertInboundPromiseRef.current) {
         await insertInboundPromiseRef.current
       }
-      records.markMissed(activeCallIdRef.current!)
+      records.markMissed(pendingId)
     }
     activeCallIdRef.current = null
     activeCallDirRef.current = null

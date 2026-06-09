@@ -38,7 +38,6 @@ export function useWebRTCClient(
       clientRef.current = client
 
       client.on("telnyx.ready", () => {
-        console.log("✅ TelnyxRTC ready — SIP registered")
         if (mounted) setIsReady(true)
       })
 
@@ -47,12 +46,6 @@ export function useWebRTCClient(
       })
 
       client.on("telnyx.notification", (n: Notification) => {
-        console.log(
-          "🔔 Telnyx notification:",
-          n.type,
-          (n.call as any)?.state,
-          (n.call as any)?.direction
-        )
         if (mounted) onNotificationRef.current(n)
       })
 
