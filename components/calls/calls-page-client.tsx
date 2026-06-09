@@ -85,6 +85,20 @@ export function CallsPageClient({
           toast(`New call logged from ${enriched.contact_number}`)
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "calls" },
+        (payload) => {
+          const updated = payload.new as Call
+          setCalls((prev) =>
+            prev.map((c) =>
+              c.id === updated.id
+                ? { ...c, ...updated, phone_numbers: c.phone_numbers }
+                : c
+            )
+          )
+        }
+      )
       .subscribe()
 
     return () => {

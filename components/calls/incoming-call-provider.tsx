@@ -64,7 +64,7 @@ export function IncomingCallProvider() {
   const [busy, setBusy] = useState(false)
   const { start: startRing, stop: stopRing } = useRingtone()
 
-  // Watch for new inbound calls in "initiated" state
+  // Watch for new inbound calls in "initiated" state, and auto-dismiss when caller hangs up
   useEffect(() => {
     const channel = supabase
       .channel("incoming-calls")
@@ -80,11 +80,14 @@ export function IncomingCallProvider() {
           if (row.direction !== "inbound" || row.status !== "initiated") return
 
           // Fetch phone number label for display
-          const { data: pn } = await supabase
+          console.log("📞 incoming call phone_number_id:", row.phone_number_id)
+          const { data: pn, error: pnError } = await supabase
             .from("phone_numbers")
             .select("label, phone_number")
             .eq("id", row.phone_number_id)
             .single()
+          if (pnError) console.warn("⚠️ phone_numbers fetch error:", pnError)
+          console.log("📞 phone number data:", pn)
 
           setCall({
             id: row.id,
@@ -95,12 +98,27 @@ export function IncomingCallProvider() {
           startRing()
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "calls" },
+        (payload) => {
+          const updated = payload.new as IncomingCall & { status: string }
+          setCall((current) => {
+            if (current?.id !== updated.id) return current
+            if (updated.status !== "initiated") {
+              stopRing()
+              return null
+            }
+            return current
+          })
+        }
+      )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, startRing])
+  }, [supabase, startRing, stopRing])
 
   const dismiss = useCallback(() => {
     stopRing()
