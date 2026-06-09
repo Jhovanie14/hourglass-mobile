@@ -1,21 +1,27 @@
+// components/calls/webrtc-provider.tsx
 "use client"
 
 import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
 } from "react"
-import { Mic, MicOff, Phone, PhoneOff } from "lucide-react"
 import type { Call as TelnyxCall } from "@telnyx/webrtc"
+import { useRingtone } from "./hooks/use-ringtone"
+import { useDuration } from "./hooks/use-duration"
+import { useCallRecords } from "./hooks/use-call-records"
+import { useWebRTCClient } from "./hooks/use-webrtc-client"
+import { IncomingCallPopup } from "./ui/incoming-call-popup"
+import { ActiveCallHud } from "./ui/active-call-hud"
+import type { PhoneNumber } from "@/types/calls"
 
 // ─── Context ────────────────────────────────────────────────────────────────
 
 type WebRTCContextType = {
   isReady: boolean
-  makeCall: (to: string, callerNumber: string) => void
+  makeCall: (to: string, phoneNumber: PhoneNumber) => void
 }
 
 const WebRTCContext = createContext<WebRTCContextType>({
@@ -27,200 +33,149 @@ export function useWebRTC() {
   return useContext(WebRTCContext)
 }
 
-// ─── Ringtone (Web Audio) ────────────────────────────────────────────────────
-
-function useRingtone() {
-  const ctxRef = useRef<AudioContext | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const burst = useCallback(() => {
-    const ctx = ctxRef.current
-    if (!ctx) return
-    const now = ctx.currentTime
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = 480
-    gain.gain.setValueAtTime(0.25, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45)
-    osc.start(now)
-    osc.stop(now + 0.45)
-  }, [])
-
-  const start = useCallback(() => {
-    if (!ctxRef.current) ctxRef.current = new AudioContext()
-    if (ctxRef.current.state === "suspended") ctxRef.current.resume()
-    burst()
-    setTimeout(burst, 500)
-    intervalRef.current = setInterval(() => {
-      burst()
-      setTimeout(burst, 500)
-    }, 3000)
-  }, [burst])
-
-  const stop = useCallback(() => {
-    clearInterval(intervalRef.current ?? undefined)
-    intervalRef.current = null
-  }, [])
-
-  useEffect(() => () => stop(), [stop])
-  return { start, stop }
-}
-
-// ─── Duration timer ──────────────────────────────────────────────────────────
-
-function useDuration(active: boolean) {
-  const [seconds, setSeconds] = useState(0)
-  useEffect(() => {
-    if (!active) {
-      setSeconds(0)
-      return
-    }
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => clearInterval(id)
-  }, [active])
-  const mm = String(Math.floor(seconds / 60)).padStart(2, "0")
-  const ss = String(seconds % 60).padStart(2, "0")
-  return `${mm}:${ss}`
-}
-
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 export function WebRTCProvider({ children }: { children: React.ReactNode }) {
-  const clientRef = useRef<InstanceType<
-    typeof import("@telnyx/webrtc").TelnyxRTC
-  > | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement>(null)
 
-  const [isReady, setIsReady] = useState(false)
+  // Call UI state
   const [incomingCall, setIncomingCall] = useState<TelnyxCall | null>(null)
   const [activeCall, setActiveCall] = useState<TelnyxCall | null>(null)
-  // callState tracks the raw SDK state string so the HUD can show "Calling…" vs "Active"
-  const [callState, setCallState] = useState<string>("")
+  const [callState, setCallState] = useState("")
   const [muted, setMuted] = useState(false)
   const [speakText, setSpeakText] = useState("")
   const [speaking, setSpeaking] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
+
+  // Company label for the incoming popup (fetched during insertInbound)
+  const [inboundPhoneNumber, setInboundPhoneNumber] = useState<{
+    label: string
+    phone_number: string
+  } | null>(null)
+
+  // DB tracking refs — not state because we don't need re-renders
+  const activeCallIdRef = useRef<string | null>(null)
+  const activeCallDirRef = useRef<"inbound" | "outbound" | null>(null)
+  const callStartedAtRef = useRef<string | null>(null)
+
+  // Stable ref to activeCall for use inside notification callback
   const activeCallRef = useRef<TelnyxCall | null>(null)
+  activeCallRef.current = activeCall
 
   const { start: startRing, stop: stopRing } = useRingtone()
-  const duration = useDuration(!!activeCall)
+  const duration = useDuration(callState === "active")
+  const records = useCallRecords()
 
-  useEffect(() => {
-    activeCallRef.current = activeCall
-  }, [activeCall])
+  // ── Notification handler (passed to useWebRTCClient) ──────────────────────
 
-  useEffect(() => {
-    let mounted = true
+  const handleNotification = useCallback(
+    (notification: { type: string; call?: TelnyxCall }) => {
+      if (notification.type !== "callUpdate") return
+      const call = notification.call
+      if (!call) return
+      const state = call.state as string
+      const isTerminated = state === "hangup" || state === "destroy" || state === "purge"
 
-    async function init() {
-      const { TelnyxRTC } = await import("@telnyx/webrtc")
-
-      const res = await fetch("/api/calls/webrtc-token")
-      if (!res.ok) {
-        console.warn(
-          "WebRTC: could not fetch credentials — is TELNYX_CREDENTIAL_CONNECTION_ID set?"
-        )
-        return
-      }
-      const { login, password } = await res.json()
-      if (!mounted || !login || !password) return
-
-      const client = new TelnyxRTC({ login, password })
-      clientRef.current = client
-
-      client.on("telnyx.ready", () => {
-        console.log("✅ TelnyxRTC ready — SIP registered")
-        if (mounted) setIsReady(true)
-      })
-
-      client.on("telnyx.error", (err: unknown) => {
-        console.error("❌ TelnyxRTC error:", err)
-      })
-
-      client.on(
-        "telnyx.notification",
-        (notification: { type: string; call?: TelnyxCall }) => {
-          console.log(
-            "🔔 Telnyx notification:",
-            notification.type,
-            (notification.call as any)?.state,
-            (notification.call as any)?.direction
-          )
-          if (!mounted || notification.type !== "callUpdate") return
-          const call = notification.call
-          if (!call) return
-          const state = call.state
-
-          const isTerminated =
-            state === "hangup" || state === "destroy" || state === "purge"
-
-          if (isTerminated) {
-            setActiveCall(null)
-            setIncomingCall(null)
-            setCallState("")
-            setMuted(false)
-            setSpeakText("")
-            stopRing()
-            if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null
-            return
-          }
-
-          // "new" fires before direction is known — skip it to avoid prematurely
-          // setting activeCall, which would block the incoming popup at "ringing"
-          if (state === "new") return
-
-          // Inbound: show incoming call popup while ringing
-          if (state === "ringing" && call.direction !== "outbound") {
-            if (activeCallRef.current) return
-            setIncomingCall(call)
-            startRing()
-            return
-          }
-
-          // Any non-terminated state — show the HUD (outbound "trying"/"ringing" shows "Calling…")
-          setActiveCall(call)
-          setCallState(state)
-          setIncomingCall(null)
-
-          if (state === "active") {
-            stopRing()
-            setMuted(false)
-            if (remoteAudioRef.current && call.remoteStream) {
-              remoteAudioRef.current.srcObject = call.remoteStream
-              remoteAudioRef.current.play().catch(() => {})
-            }
+      if (isTerminated) {
+        // Persist final call status
+        const id = activeCallIdRef.current
+        const dir = activeCallDirRef.current
+        const startedAt = callStartedAtRef.current
+        if (id) {
+          if (startedAt) {
+            records.markCompleted(id, startedAt)
+          } else if (dir === "inbound") {
+            records.markMissed(id)
+          } else {
+            records.markFailed(id)
           }
         }
-      )
+        // Reset all tracking
+        activeCallIdRef.current = null
+        activeCallDirRef.current = null
+        callStartedAtRef.current = null
+        setInboundPhoneNumber(null)
+        setActiveCall(null)
+        setIncomingCall(null)
+        setCallState("")
+        setMuted(false)
+        setSpeakText("")
+        stopRing()
+        if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null
+        return
+      }
 
-      client.connect()
-    }
+      // Skip "new" — direction not yet known
+      if (state === "new") return
 
-    init()
-    return () => {
-      mounted = false
-      clientRef.current?.disconnect()
-    }
+      // Inbound ringing
+      if (state === "ringing" && (call as any).direction !== "outbound") {
+        if (activeCallRef.current) return
+        const callerNumber =
+          (call.options as any)?.remoteCallerNumber ??
+          (call.options as any)?.destinationNumber ??
+          "Unknown"
+        const destination = (call.options as any)?.destinationNumber ?? ""
+        const telnyxId = (call as any).telnyxIDs?.telnyxCallControlId as string | undefined
+        records.insertInbound(callerNumber, destination, telnyxId).then((record) => {
+          if (record) {
+            activeCallIdRef.current = record.callId
+            activeCallDirRef.current = "inbound"
+            setInboundPhoneNumber(record.phoneNumber)
+          }
+        })
+        setIncomingCall(call)
+        startRing()
+        return
+      }
+
+      // Call became active (answered by either side)
+      if (state === "active") {
+        const now = new Date().toISOString()
+        callStartedAtRef.current = now
+        if (activeCallIdRef.current) {
+          records.markAnswered(activeCallIdRef.current, now)
+        }
+        stopRing()
+        setMuted(false)
+        if (remoteAudioRef.current && (call as any).remoteStream) {
+          remoteAudioRef.current.srcObject = (call as any).remoteStream
+          remoteAudioRef.current.play().catch(() => {})
+        }
+      }
+
+      setActiveCall(call)
+      setCallState(state)
+      setIncomingCall(null)
+    },
+    // records functions are stable (hook returns new refs each render but supabase client is memoized)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    [startRing, stopRing]
+  )
+
+  const { isReady, newCall } = useWebRTCClient(remoteAudioRef, handleNotification)
+
+  // ── makeCall ──────────────────────────────────────────────────────────────
 
   const makeCall = useCallback(
-    (to: string, callerNumber: string) => {
-      const client = clientRef.current
-      if (!client || !isReady) return
-      const call = client.newCall({
-        destinationNumber: to,
-        callerNumber,
-        remoteElement: remoteAudioRef.current ?? undefined,
+    (to: string, phoneNumber: PhoneNumber) => {
+      records.insertOutbound(phoneNumber.id, to).then((callId) => {
+        if (callId) {
+          activeCallIdRef.current = callId
+          activeCallDirRef.current = "outbound"
+        }
       })
-      // Show HUD immediately — don't wait for the first notification
-      setActiveCall(call)
-      setCallState("trying")
+      const call = newCall(to, phoneNumber.phone_number)
+      if (call) {
+        setActiveCall(call)
+        setCallState("trying")
+      }
     },
-    [isReady]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isReady, newCall]
   )
+
+  // ── Call actions ──────────────────────────────────────────────────────────
 
   const handleAnswer = useCallback(async () => {
     if (!incomingCall || actionBusy) return
@@ -236,6 +191,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     stopRing()
     await incomingCall.hangup()
     setIncomingCall(null)
+    setInboundPhoneNumber(null)
     setActionBusy(false)
   }, [incomingCall, actionBusy, stopRing])
 
@@ -255,158 +211,59 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
 
   async function handleSpeak() {
     if (!activeCall || !speakText.trim() || speaking) return
-    const callControlId = activeCall.telnyxIDs?.telnyxCallControlId
+    const callControlId = (activeCall as any).telnyxIDs?.telnyxCallControlId
     if (!callControlId) return
     setSpeaking(true)
     await fetch("/api/calls/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        call_control_id: callControlId,
-        text: speakText.trim(),
-      }),
+      body: JSON.stringify({ call_control_id: callControlId, text: speakText.trim() }),
     })
     setSpeaking(false)
     setSpeakText("")
   }
 
   const callerNumber =
-    incomingCall?.options?.remoteCallerNumber ??
-    incomingCall?.options?.destinationNumber ??
+    (incomingCall?.options as any)?.remoteCallerNumber ??
+    (incomingCall?.options as any)?.destinationNumber ??
     "Unknown"
 
   const activeNumber =
-    activeCall?.options?.remoteCallerNumber ??
-    activeCall?.options?.destinationNumber ??
+    (activeCall?.options as any)?.remoteCallerNumber ??
+    (activeCall?.options as any)?.destinationNumber ??
     "Unknown"
 
   return (
     <WebRTCContext.Provider value={{ isReady, makeCall }}>
       {children}
 
-      {/* Hidden audio element for remote call audio */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={remoteAudioRef} autoPlay hidden />
 
-      {/* ── Incoming call popup ── */}
       {incomingCall && !activeCall && (
-        <div className="fixed right-6 bottom-6 z-50 w-72 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-          <div className="flex items-center gap-3 bg-green-500/10 px-4 py-3">
-            <span className="relative flex h-3 w-3">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500" />
-            </span>
-            <span className="text-xs font-semibold tracking-widest text-green-600 uppercase dark:text-green-400">
-              Incoming Call
-            </span>
-          </div>
-          <div className="px-4 py-3">
-            <p className="text-lg font-semibold tracking-tight tabular-nums">
-              {callerNumber}
-            </p>
-          </div>
-          <div className="flex gap-2 border-t border-border px-4 py-3">
-            <button
-              onClick={handleReject}
-              disabled={actionBusy}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500 py-2.5 text-sm font-medium text-white transition hover:bg-red-600 disabled:opacity-50"
-            >
-              <PhoneOff className="h-4 w-4" />
-              Decline
-            </button>
-            <button
-              onClick={handleAnswer}
-              disabled={actionBusy}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-500 py-2.5 text-sm font-medium text-white transition hover:bg-green-600 disabled:opacity-50"
-            >
-              <Phone className="h-4 w-4" />
-              Answer
-            </button>
-          </div>
-        </div>
+        <IncomingCallPopup
+          callerNumber={callerNumber}
+          companyLabel={inboundPhoneNumber?.label ?? null}
+          companyNumber={inboundPhoneNumber?.phone_number ?? null}
+          busy={actionBusy}
+          onAnswer={handleAnswer}
+          onReject={handleReject}
+        />
       )}
 
-      {/* ── Active call HUD ── */}
       {activeCall && (
-        <div className="fixed right-6 top-6 z-50 w-80 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center justify-between bg-green-500/10 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
-              </span>
-              <span className="text-xs font-semibold tracking-widest text-green-600 uppercase dark:text-green-400">
-                {callState === "active"
-                  ? "Active Call"
-                  : callState === "ringing"
-                    ? "Ringing…"
-                    : "Calling…"}
-              </span>
-            </div>
-            {callState === "active" && (
-              <span className="font-mono text-sm text-muted-foreground tabular-nums">
-                {duration}
-              </span>
-            )}
-          </div>
-
-          <div className="px-4 py-3">
-            <p className="text-base font-semibold">{activeNumber}</p>
-          </div>
-
-          {/* TTS speak — only available once the call is connected */}
-          {callState === "active" && (
-            <div className="border-t border-border px-4 py-3">
-              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                Speak on call (TTS)
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={speakText}
-                  onChange={(e) => setSpeakText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSpeak()}
-                  placeholder="Type message…"
-                  className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:ring-1 focus:ring-ring focus:outline-none"
-                />
-                <button
-                  onClick={handleSpeak}
-                  disabled={!speakText.trim() || speaking}
-                  className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {speaking ? "…" : "Speak"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Controls */}
-          <div className="flex gap-2 border-t border-border px-4 py-3">
-            <button
-              onClick={toggleMute}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium transition ${
-                muted
-                  ? "bg-yellow-500 text-white hover:bg-yellow-600"
-                  : "bg-muted text-foreground hover:bg-muted/80"
-              }`}
-            >
-              {muted ? (
-                <MicOff className="h-4 w-4" />
-              ) : (
-                <Mic className="h-4 w-4" />
-              )}
-              {muted ? "Unmute" : "Mute"}
-            </button>
-            <button
-              onClick={handleHangup}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500 py-2.5 text-sm font-medium text-white transition hover:bg-red-600"
-            >
-              <PhoneOff className="h-4 w-4" />
-              Hang up
-            </button>
-          </div>
-        </div>
+        <ActiveCallHud
+          callState={callState}
+          duration={duration}
+          remoteNumber={activeNumber}
+          muted={muted}
+          speakText={speakText}
+          speaking={speaking}
+          onHangup={handleHangup}
+          onToggleMute={toggleMute}
+          onSpeakTextChange={setSpeakText}
+          onSpeak={handleSpeak}
+        />
       )}
     </WebRTCContext.Provider>
   )
