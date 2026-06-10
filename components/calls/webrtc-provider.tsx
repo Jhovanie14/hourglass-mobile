@@ -226,6 +226,10 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     setMuted((m) => !m)
   }, [activeCall, muted])
 
+  const handleDtmf = useCallback((digit: string) => {
+    activeCall?.dtmf(digit)
+  }, [activeCall])
+
   async function handleSpeak() {
     if (!activeCall || !speakText.trim() || speaking) return
     const callControlId = (activeCall as any).telnyxIDs?.telnyxCallControlId
@@ -280,6 +284,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
           onToggleMute={toggleMute}
           onSpeakTextChange={setSpeakText}
           onSpeak={handleSpeak}
+          onDtmf={handleDtmf}
         />
       )}
     </WebRTCContext.Provider>
