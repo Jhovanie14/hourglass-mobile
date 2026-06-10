@@ -1,5 +1,6 @@
 // components/calls/ui/active-call-hud.tsx
 import { Mic, MicOff, PhoneOff } from "lucide-react"
+import { DialPad } from "./dial-pad"
 
 type Props = {
   callState: string
@@ -12,6 +13,7 @@ type Props = {
   onToggleMute: () => void
   onSpeakTextChange: (text: string) => void
   onSpeak: () => void
+  onDtmf: (digit: string) => void
 }
 
 export function ActiveCallHud({
@@ -25,9 +27,11 @@ export function ActiveCallHud({
   onToggleMute,
   onSpeakTextChange,
   onSpeak,
+  onDtmf,
 }: Props) {
   return (
     <div className="fixed right-6 top-6 z-50 w-80 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+      {/* Header */}
       <div className="flex items-center justify-between bg-green-500/10 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2.5 w-2.5">
@@ -49,10 +53,15 @@ export function ActiveCallHud({
         )}
       </div>
 
+      {/* Remote number */}
       <div className="px-4 py-3">
         <p className="text-base font-semibold">{remoteNumber}</p>
       </div>
 
+      {/* Dialpad — always visible during a call */}
+      <DialPad onDtmf={onDtmf} />
+
+      {/* TTS speak section — active calls only */}
       {callState === "active" && (
         <div className="border-t border-border px-4 py-3">
           <p className="mb-1.5 text-xs font-medium text-muted-foreground">Speak on call (TTS)</p>
@@ -76,6 +85,7 @@ export function ActiveCallHud({
         </div>
       )}
 
+      {/* Call controls */}
       <div className="flex gap-2 border-t border-border px-4 py-3">
         <button
           onClick={onToggleMute}
