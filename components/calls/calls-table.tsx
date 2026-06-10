@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format-duration"
 import { createClient } from "@/lib/client"
+import { useWebRTC } from "@/components/calls/webrtc-provider"
 import type { Call, StatusFilter, Voicemail } from "@/types/calls"
 
 const STATUS_STYLES: Record<string, string> = {
@@ -124,6 +125,7 @@ export function CallsTable({
 }) {
   const router = useRouter()
   const [expanded, setExpanded] = useState<string | null>(null)
+  const { makeCall, isReady } = useWebRTC()
 
   function goToSms(call: Call) {
     router.push(
@@ -267,13 +269,14 @@ export function CallsTable({
                             <Button
                               variant="ghost"
                               size="icon"
-                              disabled
+                              disabled={!isReady || !call.phone_numbers}
+                              onClick={() => call.phone_numbers && makeCall(call.contact_number, call.phone_numbers)}
                               aria-label="Call back"
                             >
                               <Phone className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Voice calling coming soon</TooltipContent>
+                          <TooltipContent>Call back</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -384,7 +387,13 @@ export function CallsTable({
               </div>
 
               <div className="mt-2 flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled className="flex-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!isReady || !call.phone_numbers}
+                  onClick={() => call.phone_numbers && makeCall(call.contact_number, call.phone_numbers)}
+                  className="flex-1"
+                >
                   <Phone className="h-4 w-4" /> Call back
                 </Button>
                 <Button
