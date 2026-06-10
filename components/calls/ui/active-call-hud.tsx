@@ -58,7 +58,7 @@ export function ActiveCallHud({
         <p className="text-base font-semibold">{remoteNumber}</p>
       </div>
 
-      {/* Dialpad — always visible during a call */}
+      {/* Dialpad — intentionally shown before "active" so users can pre-dial IVR menus the moment a call connects */}
       <DialPad onDtmf={onDtmf} />
 
       {/* TTS speak section — active calls only */}
