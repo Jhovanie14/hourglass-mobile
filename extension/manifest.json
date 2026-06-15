@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Always-available call panel for Hourglass agents.",
   "minimum_chrome_version": "114",
-  "key": "__MANIFEST_KEY__",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv1xeGU9N6WjbmWSLUZtQvs992vh/8VL08DeWbCkyTJA1gYRgjr1pcWWxrdrGlzkSBlq6VSpjhsbT+mv1mhs8wIvZUxukSrSqTDCZhnpF43KjQs5IuXtyJVndTrN4Z/L0JunDmy1u8zUgUXS64HZAVk4t7xRKy8W4u1nZNNbqRINbI6H1j9dEkk1eJBD7DuoK7YjeGkJAoed4h6e5wNrXJC/8XIf4BvxSpwfjloPuIGpooxmXYAXIVm82gs6BHeDopAPdILCvDmnqUf/FBoKejtj86Y2/EZyzJ+2r+1hFuiHFTOkN0Q5efe7FOoOQ/GTt55rCYFhmG+iUeAb9Q/tTQwIDAQAB",
   "permissions": ["sidePanel", "notifications"],
   "host_permissions": ["https://www.megestic.com/*"],
   "background": { "service_worker": "service-worker.js" },

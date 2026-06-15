@@ -1,7 +1,7 @@
 import type { NextConfig } from "next"
 
 // Replaced with the real, pinned extension id in Task 8.
-const EXTENSION_ID = "__EXTENSION_ID__"
+const EXTENSION_ID = "idfnhbgmbkpeajjdpbbnepmifkgcenne"
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["ws", "telnyx"],
