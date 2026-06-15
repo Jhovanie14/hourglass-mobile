@@ -48,6 +48,28 @@ credential fails almost immediately (SIP 404/480) → voicemail. If a client is 
 nobody answers, the dial leg times out at `timeout_secs` → voicemail. If answered → bridge.
 The system reacts to the dial outcome instead of guessing availability.
 
+## Phase 0 — De-risk the agent dial → bridge (DO THIS FIRST)
+
+The single riskiest assumption is that a Call Control app can reach the WebRTC softphone by
+dialing `sip:$TELNYX_SIP_USERNAME@sip.telnyx.com`. A prior attempt left the team doubting this.
+Note the prior failure was most likely the **trunk-vs-Call-Control conflict** (the number was on
+the SIP trunk, so Call Control never owned the leg) rather than the SIP dial itself — and the
+fact that **inbound WebRTC works today proves the browser is registered and reachable** at that
+username. Still, validate empirically before building anything else:
+
+**Spike (throwaway):** point a test number at a Voice API app whose webhook does only:
+`answer` leg A → `calls.create` to `sip:$TELNYX_SIP_USERNAME@sip.telnyx.com` → on leg B
+`call.answered`, `bridge(A,B)`. Call the number; confirm the browser **rings** and, on answer,
+**audio bridges both ways**.
+
+**Most likely failure point to check:** the **Credential SIP Connection's inbound settings** must
+accept the Call-Control-originated leg (Accept inbound / SIP authentication settings). This is a
+portal toggle, not an architecture problem.
+
+**If the spike fails after fixing inbound settings:** pivot to the consolidation option — create a
+**Telephony Credential** tied to the Voice API application and repoint the softphone to it — then
+re-run the spike. Do not proceed to the voicemail build until the spike passes.
+
 ## Telnyx Event Sequence
 
 | # | Telnyx event (leg) | Server action |
@@ -155,6 +177,7 @@ Deleted (dead and/or insecure):
 | **Duplicate / out-of-order webhooks** | Idempotent handlers guarded on DB `status` transitions; `upsert(..., { ignoreDuplicates: true })` for inserts; `client_state` to disambiguate legs. |
 | **Recording PII / public MP3 URL** | Copied to a private bucket; served via short-lived signed URLs gated by session; Telnyx-side copy deleted best-effort. |
 | **Call-spam cost abuse** | Residual: answering+dialing every inbound costs money. Limited by signature-verified webhooks and Telnyx number-level controls; noted, not fully solved. |
+| **Agent dial→bridge unproven** | Validated up-front by the Phase 0 spike; most likely fix is the Credential Connection's inbound-accept settings, fallback is a telephony credential on the app. |
 
 ## Error Handling
 
@@ -203,3 +226,8 @@ Deleted (dead and/or insecure):
 - **Recording storage:** private Supabase bucket + signed URLs (PII hardening).
 - **`timeout_secs`:** 25 seconds.
 - **Trigger:** dial-result based; no schedule.
+- **Registration credential:** keep the existing Credential SIP Connection (no change to the
+  working softphone registration); the Voice API app dials `sip:$TELNYX_SIP_USERNAME@sip.telnyx.com`.
+  Consolidating onto a telephony credential is the **fallback** only if the Phase 0 spike fails.
+- **Phase 0 spike gates the build:** the agent dial→bridge must be proven before voicemail work
+  begins.
