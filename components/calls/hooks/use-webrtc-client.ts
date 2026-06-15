@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { RefObject } from "react"
 import type { Call as TelnyxCall } from "@telnyx/webrtc"
+import { createClient } from "@/lib/client"
 
 type Notification = { type: string; call?: TelnyxCall }
 
@@ -26,7 +27,15 @@ export function useWebRTCClient(
     async function init() {
       const { TelnyxRTC } = await import("@telnyx/webrtc")
 
-      const res = await fetch("/api/calls/webrtc-token")
+      const supabase = createClient()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const res = await fetch("/api/calls/webrtc-token", {
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {},
+      })
       if (!res.ok) {
         console.warn("WebRTC: could not fetch credentials — is TELNYX_SIP_USERNAME set?")
         return
