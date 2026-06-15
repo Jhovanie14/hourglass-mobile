@@ -15,25 +15,32 @@ export function PanelApp() {
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setLoading(false)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSession(data.session))
+      .finally(() => setLoading(false))
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) =>
       setSession(s)
     )
     return () => sub.subscription.unsubscribe()
   }, [supabase])
 
+  const userId = session?.user?.id
   useEffect(() => {
-    if (!session) return
+    if (!userId) return
     supabase
       .from("phone_numbers")
       .select("id, label, phone_number, color")
       .eq("is_active", true)
       .order("created_at", { ascending: true })
-      .then(({ data }) => setPhoneNumbers((data ?? []) as PhoneNumber[]))
-  }, [session, supabase])
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to load phone numbers:", error.message)
+          return
+        }
+        setPhoneNumbers((data ?? []) as PhoneNumber[])
+      })
+  }, [userId, supabase])
 
   if (loading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading…</div>

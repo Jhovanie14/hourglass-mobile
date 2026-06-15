@@ -25,7 +25,11 @@ export function PanelLogin({ supabase }: { supabase: SupabaseClient }) {
       <h1 className="text-base font-semibold text-foreground">
         Hourglass Call Panel
       </h1>
+      <label htmlFor="panel-email" className="sr-only">
+        Email
+      </label>
       <Input
+        id="panel-email"
         type="email"
         placeholder="Email"
         value={email}
@@ -33,7 +37,11 @@ export function PanelLogin({ supabase }: { supabase: SupabaseClient }) {
         autoComplete="username"
         required
       />
+      <label htmlFor="panel-password" className="sr-only">
+        Password
+      </label>
       <Input
+        id="panel-password"
         type="password"
         placeholder="Password"
         value={password}
@@ -42,7 +50,7 @@ export function PanelLogin({ supabase }: { supabase: SupabaseClient }) {
         required
       />
       {error && <p className="text-sm text-red-500">{error}</p>}
-      <Button type="submit" disabled={busy}>
+      <Button type="submit" disabled={busy} aria-busy={busy}>
         {busy ? "Signing in…" : "Sign in"}
       </Button>
     </form>
