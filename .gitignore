@@ -22,6 +22,10 @@
 .DS_Store
 *.pem
 
+# Chrome extension signing key (never commit)
+extension/.signing-key.pem
+extension/.pub.der
+
 # debug
 npm-debug.log*
 yarn-debug.log*
