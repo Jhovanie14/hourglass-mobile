@@ -274,12 +274,25 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     }
   }, [embedded, incomingCall, activeCall, callerNumber, inboundPhoneNumber])
 
+  // Only emit call-ended after a call has actually been active (avoids a
+  // spurious event on mount). targetOrigin "*" is safe: the payload carries
+  // no secrets and the receiver validates event.origin.
+  const everActiveRef = useRef(false)
   useEffect(() => {
     if (!embedded) return
-    window.parent.postMessage(
-      { source: "hourglass-panel", type: activeCall ? "call-active" : "call-ended" },
-      "*"
-    )
+    if (activeCall) {
+      everActiveRef.current = true
+      window.parent.postMessage(
+        { source: "hourglass-panel", type: "call-active" },
+        "*"
+      )
+    } else if (everActiveRef.current) {
+      everActiveRef.current = false
+      window.parent.postMessage(
+        { source: "hourglass-panel", type: "call-ended" },
+        "*"
+      )
+    }
   }, [embedded, activeCall])
 
   return (
