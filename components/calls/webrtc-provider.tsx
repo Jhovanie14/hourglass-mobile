@@ -5,6 +5,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from "react"
@@ -253,6 +254,33 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     (activeCall?.options as any)?.remoteCallerNumber ??
     (activeCall?.options as any)?.destinationNumber ??
     "Unknown"
+
+  // Bridge call events to the extension shell when embedded in the side panel.
+  const embedded =
+    typeof window !== "undefined" && window.parent !== window
+
+  useEffect(() => {
+    if (!embedded) return
+    if (incomingCall && !activeCall) {
+      window.parent.postMessage(
+        {
+          source: "hourglass-panel",
+          type: "incoming",
+          caller: callerNumber,
+          label: inboundPhoneNumber?.label ?? null,
+        },
+        "*"
+      )
+    }
+  }, [embedded, incomingCall, activeCall, callerNumber, inboundPhoneNumber])
+
+  useEffect(() => {
+    if (!embedded) return
+    window.parent.postMessage(
+      { source: "hourglass-panel", type: activeCall ? "call-active" : "call-ended" },
+      "*"
+    )
+  }, [embedded, activeCall])
 
   return (
     <WebRTCContext.Provider value={{ isReady, makeCall }}>
