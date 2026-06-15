@@ -449,7 +449,7 @@ function commandId(): string {
   return crypto.randomUUID()
 }
 
-/** Answer the inbound caller leg (leg A). */
+/** Answer the inbound caller leg (leg A). The body arg is required by the SDK. */
 export async function answerCaller(callControlId: string): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() => telnyx.calls.actions.answer(callControlId, { command_id: commandId() }))
@@ -467,7 +467,7 @@ export async function dialAgent(params: {
   if (!sipUser || !appId) throw new Error("TELNYX_SIP_USERNAME or TELNYX_VOICE_APP_ID not set")
 
   await withRetry(() =>
-    telnyx.calls.create({
+    telnyx.calls.dial({
       connection_id: appId,
       to: `sip:${sipUser}@sip.telnyx.com`,
       from: params.callerNumber, // agent sees the customer's number
@@ -486,7 +486,10 @@ export async function dialAgent(params: {
 export async function bridgeLegs(aLegId: string, bLegId: string): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() =>
-    telnyx.calls.actions.bridge(aLegId, { call_control_id: bLegId, command_id: commandId() })
+    telnyx.calls.actions.bridge(aLegId, {
+      call_control_id_to_bridge_with: bLegId,
+      command_id: commandId(),
+    })
   )
 }
 
