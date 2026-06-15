@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Hourglass Call Panel",
+  "version": "1.0.0",
+  "description": "Always-available call panel for Hourglass agents.",
+  "minimum_chrome_version": "114",
+  "key": "__MANIFEST_KEY__",
+  "permissions": ["sidePanel", "notifications"],
+  "host_permissions": ["https://www.megestic.com/*"],
+  "background": { "service_worker": "service-worker.js" },
+  "side_panel": { "default_path": "side-panel.html" },
+  "action": {
+    "default_title": "Open Hourglass Call Panel",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
