@@ -22,9 +22,9 @@
 .DS_Store
 *.pem
 
-# Chrome extension signing key (never commit)
-extension/.signing-key.pem
-extension/.pub.der
+# Chrome extension signing key (never commit; kept outside extension/ so Chrome
+# does not warn about a bundled key)
+/.extension-keys/
 
 # debug
 npm-debug.log*

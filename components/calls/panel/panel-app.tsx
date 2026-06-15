@@ -25,22 +25,22 @@ export function PanelApp() {
     return () => sub.subscription.unsubscribe()
   }, [supabase])
 
-  const userId = session?.user?.id
+  const accessToken = session?.access_token
   useEffect(() => {
-    if (!userId) return
-    supabase
-      .from("phone_numbers")
-      .select("id, label, phone_number, color")
-      .eq("is_active", true)
-      .order("created_at", { ascending: true })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Failed to load phone numbers:", error.message)
-          return
+    if (!accessToken) return
+    fetch("/api/calls/phone-numbers", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((res) => res.json())
+      .then((body) => {
+        if (Array.isArray(body.phoneNumbers)) {
+          setPhoneNumbers(body.phoneNumbers as PhoneNumber[])
+        } else {
+          console.error("Failed to load phone numbers:", body.error)
         }
-        setPhoneNumbers((data ?? []) as PhoneNumber[])
       })
-  }, [userId, supabase])
+      .catch((err) => console.error("Failed to load phone numbers:", err))
+  }, [accessToken])
 
   if (loading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading…</div>
