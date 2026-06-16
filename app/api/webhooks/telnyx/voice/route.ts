@@ -24,7 +24,11 @@ type TelnyxCallPayload = {
   connection_id?: string
   client_state?: string | null
   // call.recording.saved fields
-  recording_url?: string
+  recording_url?: string // legacy/unused by Telnyx; real URLs live in recording_urls
+  recording_urls?: { mp3?: string; wav?: string }
+  public_recording_urls?: { mp3?: string; wav?: string }
+  recording_started_at?: string
+  recording_ended_at?: string
   duration_ms?: number
 }
 
@@ -320,11 +324,21 @@ async function handleSpeakEnded(supabase: SupabaseClient, payload: TelnyxCallPay
 }
 
 async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCallPayload) {
-  const recordingUrl = payload.recording_url
-  const durationMs = payload.duration_ms ?? 0
+  // Telnyx puts the real (signed, time-limited) URLs in recording_urls; the flat
+  // recording_url field is not populated. Prefer mp3, fall back to wav/legacy.
+  const recordingUrl =
+    payload.recording_urls?.mp3 ?? payload.recording_urls?.wav ?? payload.recording_url
+
+  // duration_ms isn't sent on this event; derive it from the recording timestamps.
+  let durationMs = payload.duration_ms ?? 0
+  if (!durationMs && payload.recording_started_at && payload.recording_ended_at) {
+    durationMs =
+      new Date(payload.recording_ended_at).getTime() -
+      new Date(payload.recording_started_at).getTime()
+  }
 
   if (!recordingUrl) {
-    console.warn("⚠️ call.recording.saved has no recording_url")
+    console.warn("⚠️ call.recording.saved has no recording url")
     return
   }
 
