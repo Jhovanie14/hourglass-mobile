@@ -455,11 +455,16 @@ export async function answerCaller(callControlId: string): Promise<void> {
   await withRetry(() => telnyx.calls.actions.answer(callControlId, { command_id: commandId() }))
 }
 
-/** Dial the WebRTC SIP credential as leg B, tagged so we can correlate it back. */
+/** Dial the WebRTC SIP credential as leg B, tagged so we can correlate it back.
+ *  NOTE (proven in the Task 0 spike): `from` MUST be an owned DID (the number the
+ *  customer dialed = payload.to), NOT the caller's raw number — Telnyx rejects an
+ *  un-owned `from` on the dial. The caller's number is passed as `from_display_name`
+ *  so the agent still sees who's calling. */
 export async function dialAgent(params: {
   aLegId: string
   callId: string
-  callerNumber: string
+  didNumber: string // owned DID the customer dialed (payload.to)
+  callerNumber: string // customer's number, shown as caller ID
 }): Promise<void> {
   const telnyx = getTelnyxClient()
   const sipUser = process.env.TELNYX_SIP_USERNAME
@@ -470,7 +475,8 @@ export async function dialAgent(params: {
     telnyx.calls.dial({
       connection_id: appId,
       to: `sip:${sipUser}@sip.telnyx.com`,
-      from: params.callerNumber, // agent sees the customer's number
+      from: params.didNumber, // owned DID — required, un-owned `from` is rejected
+      from_display_name: params.callerNumber, // agent still sees the customer's number
       timeout_secs: 25,
       command_id: commandId(),
       client_state: encodeClientState({
@@ -701,7 +707,8 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     await dialAgent({
       aLegId: payload.call_control_id,
       callId: call.id,
-      callerNumber: payload.from,
+      didNumber: payload.to, // owned DID the customer dialed
+      callerNumber: payload.from, // shown to the agent as caller ID
     })
   } catch (err) {
     console.error("⚠️ Failed to dial agent; sending caller to voicemail:", err)
@@ -1074,6 +1081,8 @@ git commit -m "feat: play voicemails via authenticated signed-URL route"
   `TELNYX_API_KEY`, `TELNYX_WEBHOOK_PUBLIC_KEY` (from Telnyx → public key; now REQUIRED), `TELNYX_SIP_USERNAME`, `TELNYX_SIP_PASSWORD`, `TELNYX_VOICE_APP_ID`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_URL`.
 
 - [ ] **Step 2: Point the production number** at the Voice API app (move it off the SIP trunk), webhook → `/api/webhooks/telnyx/voice`.
+
+> **REQUIRED Telnyx config (proven in Task 0):** On the **Credential SIP Connection** the softphone registers to, open **Authentication and routing → SIP URI Calling** and set it to **"Only from my SIP Connections (internal)"**. Without this, the Voice API app's dial to `sip:<user>@sip.telnyx.com` is rejected (SIP 403 / `user_busy`) and the agent never rings. This does **not** block customer PSTN calls — those arrive via the DID → Voice API app → internal dial, which is permitted; it only blocks public direct-SIP-URI dialing.
 
 - [ ] **Step 3: Run the full suite.**
 
