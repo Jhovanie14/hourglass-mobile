@@ -1,6 +1,13 @@
-import crypto from "crypto"
-import Telnyx from "telnyx"
 import { createAdminClient } from "@/lib/admin"
+import { verifyTelnyxWebhook } from "@/lib/telnyx/webhook"
+import { decodeClientState } from "@/lib/telnyx/client-state"
+import {
+  answerCaller,
+  dialAgent,
+  bridgeLegs,
+  startVoicemail,
+  DEFAULT_GREETING,
+} from "@/lib/telnyx/voice-orchestrator"
 
 export const runtime = "nodejs"
 
@@ -15,6 +22,7 @@ type TelnyxCallPayload = {
   start_time?: string
   end_time?: string
   connection_id?: string
+  client_state?: string | null
   // call.recording.saved fields
   recording_url?: string
   duration_ms?: number
@@ -27,59 +35,25 @@ type TelnyxVoiceWebhookBody = {
   }
 }
 
-const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex")
-
-function verifySignature(
-  rawBody: string,
-  signatureHeader: string | null,
-  timestampHeader: string | null,
-  publicKeyBase64: string
-): boolean {
-  if (!signatureHeader || !timestampHeader) return false
-  try {
-    const publicKey = crypto.createPublicKey({
-      key: Buffer.concat([
-        ED25519_SPKI_PREFIX,
-        Buffer.from(publicKeyBase64, "base64"),
-      ]),
-      format: "der",
-      type: "spki",
-    })
-    return crypto.verify(
-      null,
-      Buffer.from(`${timestampHeader}|${rawBody}`),
-      publicKey,
-      Buffer.from(signatureHeader, "base64")
-    )
-  } catch {
-    return false
-  }
-}
-
 export async function POST(req: Request) {
   const rawBody = await req.text()
 
-  const publicKey =
-    process.env.TELNYX_WEBHOOK_PUBLIC_KEY ?? process.env.TELNYX_PUBLIC_KEY
-
-  if (publicKey) {
-    const valid = verifySignature(
-      rawBody,
-      req.headers.get("telnyx-signature-ed25519"),
-      req.headers.get("telnyx-timestamp"),
-      publicKey
-    )
-    if (!valid) {
-      console.warn("⚠️ Voice webhook signature verification failed")
-      return Response.json({ error: "Invalid signature" }, { status: 403 })
-    }
+  const valid = verifyTelnyxWebhook({
+    body: rawBody,
+    signature: req.headers.get("telnyx-signature-ed25519"),
+    timestamp: req.headers.get("telnyx-timestamp"),
+    publicKeyBase64: process.env.TELNYX_WEBHOOK_PUBLIC_KEY ?? process.env.TELNYX_PUBLIC_KEY,
+  })
+  if (!valid) {
+    console.warn("⚠️ Voice webhook rejected (bad signature / stale timestamp / missing key)")
+    return Response.json({ error: "Invalid signature" }, { status: 403 })
   }
 
   const body = JSON.parse(rawBody) as TelnyxVoiceWebhookBody
   const { event_type, payload } = body.data
   console.log("📞 Telnyx voice event:", event_type, {
     call_control_id: payload.call_control_id,
-    direction: payload.direction,
+    leg: payload.client_state ? "AGENT(B)" : "CALLER(A)",
     from: payload.from,
     to: payload.to,
   })
@@ -111,11 +85,14 @@ export async function POST(req: Request) {
 
 type SupabaseClient = ReturnType<typeof createAdminClient>
 
-async function handleCallInitiated(
-  supabase: SupabaseClient,
-  payload: TelnyxCallPayload
-) {
+async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCallPayload) {
+  const agentState = decodeClientState(payload.client_state)
+
+  // The dialed agent leg (B) is outgoing and tagged — never log it as a call.
+  if (agentState?.role === "agent") return
+
   if (payload.direction === "outgoing") {
+    // Softphone-originated outbound call — preserve existing logging.
     const { data: phoneNumber } = await supabase
       .from("phone_numbers")
       .select("id")
@@ -141,20 +118,20 @@ async function handleCallInitiated(
     return
   }
 
-  const toNumber = payload.to
+  // Inbound caller leg (A): log it, then answer so we can orchestrate.
   const { data: phoneNumber } = await supabase
     .from("phone_numbers")
     .select("id")
-    .eq("phone_number", toNumber)
+    .eq("phone_number", payload.to)
     .eq("is_active", true)
     .maybeSingle()
 
   if (!phoneNumber) {
-    console.warn("⚠️ No active phone number matches:", toNumber)
+    console.warn("⚠️ No active phone number matches:", payload.to)
     return
   }
 
-  const { data: inserted, error: insertError } = await supabase.from("calls").upsert(
+  const { error: insertError } = await supabase.from("calls").upsert(
     {
       phone_number_id: phoneNumber.id,
       contact_number: payload.from,
@@ -163,40 +140,81 @@ async function handleCallInitiated(
       telnyx_call_id: payload.call_control_id,
     },
     { onConflict: "telnyx_call_id", ignoreDuplicates: true }
-  ).select("id, created_at").maybeSingle()
-
+  )
   if (insertError) {
     console.error("⚠️ Failed to insert inbound call:", insertError)
-  } else {
-    console.log(`📥 Inbound call inserted: id=${inserted?.id} created_at=${inserted?.created_at}`)
+  }
+
+  try {
+    await answerCaller(payload.call_control_id)
+  } catch (err) {
+    console.error("⚠️ Failed to answer inbound caller:", err)
   }
 }
 
-async function handleCallAnswered(
-  supabase: SupabaseClient,
-  payload: TelnyxCallPayload
-) {
-  await supabase
+async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallPayload) {
+  const agentState = decodeClientState(payload.client_state)
+
+  // Agent (leg B) picked up → bridge to the caller (leg A).
+  if (agentState?.role === "agent") {
+    try {
+      await bridgeLegs(agentState.aLegId, payload.call_control_id)
+      await supabase
+        .from("calls")
+        .update({ status: "answered", started_at: new Date().toISOString() })
+        .eq("telnyx_call_id", agentState.aLegId)
+    } catch (err) {
+      console.error("⚠️ Failed to bridge agent leg:", err)
+    }
+    return
+  }
+
+  // Caller (leg A) was answered by us → look up DB id, then dial the agent.
+  const { data: call } = await supabase
     .from("calls")
-    .update({
-      status: "answered",
-      started_at: payload.start_time ?? new Date().toISOString(),
-    })
+    .select("id")
     .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
+  if (!call) return
+
+  try {
+    await dialAgent({
+      aLegId: payload.call_control_id,
+      callId: call.id,
+      didNumber: payload.to, // owned DID the customer dialed
+      callerNumber: payload.from, // shown to the agent as caller ID
+    })
+  } catch (err) {
+    console.error("⚠️ Failed to dial agent; sending caller to voicemail:", err)
+    await beginVoicemail(supabase, payload.call_control_id)
+  }
 }
 
-async function handleCallHangup(
-  supabase: SupabaseClient,
-  payload: TelnyxCallPayload
-) {
+async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPayload) {
+  const agentState = decodeClientState(payload.client_state)
+
+  // Agent leg (B) ended. If the caller leg was never bridged (still "initiated"),
+  // the agent was offline or didn't answer → voicemail.
+  if (agentState?.role === "agent") {
+    const { data: callerCall } = await supabase
+      .from("calls")
+      .select("status")
+      .eq("telnyx_call_id", agentState.aLegId)
+      .maybeSingle()
+    if (callerCall?.status === "initiated") {
+      await beginVoicemail(supabase, agentState.aLegId)
+    }
+    return
+  }
+
+  // Caller leg (A) ended.
   const { data: call } = await supabase
     .from("calls")
     .select("id, status, started_at, direction, phone_number_id")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
 
-  const wasAnswered =
-    call?.status === "answered" || call?.status === "completed"
+  const wasAnswered = call?.status === "answered" || call?.status === "completed"
   const endedAt = payload.end_time ?? new Date().toISOString()
 
   let finalStatus: string
@@ -213,8 +231,7 @@ async function handleCallHangup(
   let durationSeconds: number | null = null
   if (wasAnswered && call?.started_at) {
     durationSeconds = Math.round(
-      (new Date(endedAt).getTime() - new Date(call.started_at).getTime()) /
-        1000
+      (new Date(endedAt).getTime() - new Date(call.started_at).getTime()) / 1000
     )
   }
 
@@ -255,10 +272,31 @@ async function handleCallHangup(
   }
 }
 
-async function handleSpeakEnded(
-  supabase: SupabaseClient,
-  payload: TelnyxCallPayload
-) {
+/** Resolve the greeting, flip the caller's call to voicemail (idempotently), and speak it. */
+async function beginVoicemail(supabase: SupabaseClient, aLegId: string) {
+  const { data: call } = await supabase
+    .from("calls")
+    .select("id, status, phone_numbers(voicemail_greeting)")
+    .eq("telnyx_call_id", aLegId)
+    .maybeSingle()
+
+  // Idempotency: only start once.
+  if (!call || call.status === "voicemail") return
+
+  await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
+
+  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
+  const greeting =
+    (pn as { voicemail_greeting: string | null } | null)?.voicemail_greeting ?? DEFAULT_GREETING
+
+  try {
+    await startVoicemail(aLegId, greeting)
+  } catch (err) {
+    console.error("⚠️ Failed to start voicemail greeting:", err)
+  }
+}
+
+async function handleSpeakEnded(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const { data: call } = await supabase
     .from("calls")
     .select("status")
@@ -267,23 +305,21 @@ async function handleSpeakEnded(
 
   if (call?.status !== "voicemail") return
 
-  const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
-
+  const { getTelnyxClient, withRetry } = await import("@/lib/telnyx/client")
   try {
-    await telnyx.calls.actions.startRecording(payload.call_control_id, {
-      format: "mp3",
-      channels: "single",
-    })
+    await withRetry(() =>
+      getTelnyxClient().calls.actions.startRecording(payload.call_control_id, {
+        format: "mp3",
+        channels: "single",
+      })
+    )
     console.log(`🎙 Recording started for call ${payload.call_control_id}`)
   } catch (err) {
     console.error("⚠️ Failed to start recording:", err)
   }
 }
 
-async function handleRecordingSaved(
-  supabase: SupabaseClient,
-  payload: TelnyxCallPayload
-) {
+async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const recordingUrl = payload.recording_url
   const durationMs = payload.duration_ms ?? 0
 
@@ -323,9 +359,7 @@ async function handleRecordingSaved(
     console.error("⚠️ Failed to set has_voicemail flag:", flagError)
   }
 
-  const pn = Array.isArray(call.phone_numbers)
-    ? call.phone_numbers[0]
-    : call.phone_numbers
+  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
 
   const { error: notifError } = await supabase.from("notifications").insert({
     type: "voicemail",
