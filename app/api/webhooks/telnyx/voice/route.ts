@@ -315,6 +315,7 @@ async function handleSpeakEnded(supabase: SupabaseClient, payload: TelnyxCallPay
       getTelnyxClient().calls.actions.startRecording(payload.call_control_id, {
         format: "mp3",
         channels: "single",
+        play_beep: true, // play the "tone" the greeting promises before recording
       })
     )
     console.log(`🎙 Recording started for call ${payload.call_control_id}`)
