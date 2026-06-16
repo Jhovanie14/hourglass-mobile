@@ -66,6 +66,7 @@ export function PanelDialer({
         <Input
           id="panel-to"
           placeholder="+1 (555) 000-0000"
+          type="tel"
           value={to}
           onChange={(e) => setTo(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleCall()}
