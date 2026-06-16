@@ -9,6 +9,16 @@ function commandId(): string {
   return crypto.randomUUID()
 }
 
+/** Telnyx restricts from_display_name to letters, numbers, spaces and -_~!.+ and
+ *  128 chars. Callers can arrive as a SIP URI (e.g. "+123@sip.telnyx.com"), whose
+ *  "@" is rejected with a 422. Drop the SIP host and strip disallowed chars. */
+function sanitizeDisplayName(value: string): string {
+  return value
+    .split("@")[0]
+    .replace(/[^a-zA-Z0-9 \-_~!.+]/g, "")
+    .slice(0, 128)
+}
+
 /** Answer the inbound caller leg (leg A). The body arg is required by the SDK. */
 export async function answerCaller(callControlId: string): Promise<void> {
   const telnyx = getTelnyxClient()
@@ -31,12 +41,15 @@ export async function dialAgent(params: {
   const appId = process.env.TELNYX_VOICE_APP_ID
   if (!sipUser || !appId) throw new Error("TELNYX_SIP_USERNAME or TELNYX_VOICE_APP_ID not set")
 
+  const displayName = sanitizeDisplayName(params.callerNumber)
+
   await withRetry(() =>
     telnyx.calls.dial({
       connection_id: appId,
       to: `sip:${sipUser}@sip.telnyx.com`,
       from: params.didNumber, // owned DID — required, un-owned `from` is rejected
-      from_display_name: params.callerNumber, // agent still sees the customer's number
+      // agent still sees the customer's number; omit if sanitizing left it empty
+      ...(displayName ? { from_display_name: displayName } : {}),
       timeout_secs: 25,
       command_id: commandId(),
       client_state: encodeClientState({
