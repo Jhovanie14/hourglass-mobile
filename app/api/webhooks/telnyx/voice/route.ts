@@ -330,7 +330,7 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
 
   const { data: call } = await supabase
     .from("calls")
-    .select("id, contact_number, phone_number_id, phone_numbers(label)")
+    .select("id, contact_number, phone_number_id, has_voicemail, phone_numbers(label)")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
 
@@ -338,10 +338,29 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
     console.warn("⚠️ No call found for recording:", payload.call_control_id)
     return
   }
+  if (call.has_voicemail) return // idempotency: already processed
+
+  // Copy the MP3 into the private bucket; fall back to the Telnyx URL on failure
+  // so a voicemail is never lost.
+  let storagePath: string | null = null
+  try {
+    const res = await fetch(recordingUrl)
+    if (!res.ok) throw new Error(`download failed: ${res.status}`)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const path = `${call.id}.mp3`
+    const { error: upErr } = await supabase.storage
+      .from("voicemails")
+      .upload(path, bytes, { contentType: "audio/mpeg", upsert: true })
+    if (upErr) throw upErr
+    storagePath = path
+  } catch (err) {
+    console.error("⚠️ Failed to copy recording to private bucket; keeping Telnyx URL:", err)
+  }
 
   const { error: vmError } = await supabase.from("voicemails").insert({
     call_id: call.id,
     recording_url: recordingUrl,
+    storage_path: storagePath,
     duration_seconds: Math.round(durationMs / 1000),
   })
 
