@@ -104,7 +104,7 @@ function VoicemailPlayer({ callId }: { callId: string }) {
   return (
     <div className="flex items-center gap-3">
       <Mic className="h-4 w-4 shrink-0 text-purple-500" />
-      <audio controls className="h-8 flex-1 max-w-sm" src={voicemail.recording_url} />
+      <audio controls className="h-8 flex-1 max-w-sm" src={`/api/voicemails/${voicemail.id}/audio`} />
       <span className="text-xs text-muted-foreground tabular-nums">
         {formatDuration(voicemail.duration_seconds)}
       </span>
