@@ -54,4 +54,19 @@ describe("bridgeLegs", () => {
     await bridgeLegs("caller-leg-1", "agent-leg-xyz")
     expect(bridge.mock.calls[0][1]).not.toHaveProperty("play_ringtone")
   })
+
+  it("sends park_after_unbridge 'self' when parkAfterUnbridge is requested", async () => {
+    bridge.mockResolvedValue({})
+    await bridgeLegs("caller-leg-1", "agent-leg-xyz", { parkAfterUnbridge: true })
+    expect(bridge).toHaveBeenCalledWith(
+      "caller-leg-1",
+      expect.objectContaining({ park_after_unbridge: "self" })
+    )
+  })
+
+  it("omits park_after_unbridge by default", async () => {
+    bridge.mockResolvedValue({})
+    await bridgeLegs("caller-leg-1", "agent-leg-xyz")
+    expect(bridge.mock.calls[0][1]).not.toHaveProperty("park_after_unbridge")
+  })
 })

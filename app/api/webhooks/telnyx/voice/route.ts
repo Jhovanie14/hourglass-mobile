@@ -189,7 +189,10 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     // Bridge now, before the agent answers, so Telnyx plays ringback to the
     // caller while the agent leg rings. (We answered the caller leg early to
     // orchestrate, which stopped the carrier ringback.)
-    await bridgeLegs(payload.call_control_id, agentLegId, { playRingtone: true })
+    await bridgeLegs(payload.call_control_id, agentLegId, {
+      playRingtone: true,
+      parkAfterUnbridge: true,
+    })
   } catch (err) {
     console.error("⚠️ Failed to dial/bridge agent; sending caller to voicemail:", err)
     await beginVoicemail(supabase, payload.call_control_id)

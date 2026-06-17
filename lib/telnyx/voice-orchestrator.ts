@@ -70,7 +70,7 @@ export async function dialAgent(params: {
 export async function bridgeLegs(
   aLegId: string,
   bLegId: string,
-  opts: { playRingtone?: boolean } = {}
+  opts: { playRingtone?: boolean; parkAfterUnbridge?: boolean } = {}
 ): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() =>
@@ -78,6 +78,9 @@ export async function bridgeLegs(
       call_control_id_to_bridge_with: bLegId,
       command_id: commandId(),
       ...(opts.playRingtone ? { play_ringtone: true } : {}),
+      // Park the caller leg (not hang it up) when the agent leg unbridges, so a
+      // no-answer can still play the voicemail greeting + record on this leg.
+      ...(opts.parkAfterUnbridge ? { park_after_unbridge: "self" } : {}),
     })
   )
 }
