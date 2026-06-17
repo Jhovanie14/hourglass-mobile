@@ -35,7 +35,7 @@ export async function dialAgent(params: {
   callId: string
   didNumber: string // owned DID the customer dialed (payload.to)
   callerNumber: string // customer's number, shown as caller ID
-}): Promise<void> {
+}): Promise<string> {
   const telnyx = getTelnyxClient()
   const sipUser = process.env.TELNYX_SIP_USERNAME
   const appId = process.env.TELNYX_VOICE_APP_ID
@@ -43,7 +43,7 @@ export async function dialAgent(params: {
 
   const displayName = sanitizeDisplayName(params.callerNumber)
 
-  await withRetry(() =>
+  const res = await withRetry(() =>
     telnyx.calls.dial({
       connection_id: appId,
       to: `sip:${sipUser}@sip.telnyx.com`,
@@ -59,15 +59,25 @@ export async function dialAgent(params: {
       }),
     })
   )
+
+  const agentLegId = res?.data?.call_control_id
+  if (!agentLegId) throw new Error("dialAgent: no call_control_id in Telnyx dial response")
+  return agentLegId
 }
 
-/** Bridge the answered agent leg (B) to the caller leg (A). */
-export async function bridgeLegs(aLegId: string, bLegId: string): Promise<void> {
+/** Bridge the agent leg (B) to the caller leg (A). When the target leg has not
+ *  answered yet, pass `playRingtone` so Telnyx plays ringback to the caller. */
+export async function bridgeLegs(
+  aLegId: string,
+  bLegId: string,
+  opts: { playRingtone?: boolean } = {}
+): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() =>
     telnyx.calls.actions.bridge(aLegId, {
       call_control_id_to_bridge_with: bLegId,
       command_id: commandId(),
+      ...(opts.playRingtone ? { play_ringtone: true } : {}),
     })
   )
 }
