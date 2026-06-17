@@ -40,6 +40,11 @@ export async function getOrCreateAgentCredential(
     )
   }
 
+  // Race note: two simultaneous first-calls for the same user can both reach
+  // here. The user_id primary key makes the second insert fail (no duplicate
+  // row), so the request errors out and the client retries — by then the row
+  // exists and the early-return path serves it. The trade-off is a rare
+  // orphaned Telnyx credential; acceptable for Phase 1.
   const { error: writeErr } = await admin.from("agent_sip_credentials").insert({
     user_id: userId,
     telnyx_credential_id: cred.id,
