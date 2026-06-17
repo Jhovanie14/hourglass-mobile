@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono, DM_Sans, Inter } from "next/font/google"
+import { Geist_Mono, DM_Sans, Inter } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -36,7 +36,7 @@ export default function RootLayout({
         <TooltipProvider>
           <ThemeProvider>
             {children}
-            <Toaster />
+            <Toaster position="bottom-left" />
           </ThemeProvider>
         </TooltipProvider>
       </body>

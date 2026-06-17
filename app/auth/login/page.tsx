@@ -1,7 +1,6 @@
 "use client"
 
 import { useActionState, useState } from "react"
-import Link from "next/link"
 import { login } from "../actions"
 import {
   Card,
