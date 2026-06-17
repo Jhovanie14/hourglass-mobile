@@ -159,17 +159,15 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
 async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const agentState = decodeClientState(payload.client_state)
 
-  // Agent (leg B) picked up → bridge to the caller (leg A).
+  // Agent (leg B) picked up. The legs were already bridged at dial time (with
+  // ringback), so the agent answering simply completes the connection — just
+  // mark the caller's call answered.
   if (agentState?.role === "agent") {
-    try {
-      await bridgeLegs(agentState.aLegId, payload.call_control_id)
-      await supabase
-        .from("calls")
-        .update({ status: "answered", started_at: new Date().toISOString() })
-        .eq("telnyx_call_id", agentState.aLegId)
-    } catch (err) {
-      console.error("⚠️ Failed to bridge agent leg:", err)
-    }
+    const { error } = await supabase
+      .from("calls")
+      .update({ status: "answered", started_at: new Date().toISOString() })
+      .eq("telnyx_call_id", agentState.aLegId)
+    if (error) console.error("⚠️ Failed to mark call answered:", error)
     return
   }
 
@@ -182,12 +180,16 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
   if (!call) return
 
   try {
-    await dialAgent({
+    const agentLegId = await dialAgent({
       aLegId: payload.call_control_id,
       callId: call.id,
       didNumber: payload.to, // owned DID the customer dialed
       callerNumber: payload.from, // shown to the agent as caller ID
     })
+    // Bridge now, before the agent answers, so Telnyx plays ringback to the
+    // caller while the agent leg rings. (We answered the caller leg early to
+    // orchestrate, which stopped the carrier ringback.)
+    await bridgeLegs(payload.call_control_id, agentLegId, { playRingtone: true })
   } catch (err) {
     console.error("⚠️ Failed to dial agent; sending caller to voicemail:", err)
     await beginVoicemail(supabase, payload.call_control_id)
