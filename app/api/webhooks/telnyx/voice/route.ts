@@ -6,6 +6,7 @@ import {
   dialAgent,
   bridgeLegs,
   startVoicemail,
+  hangupCall,
   DEFAULT_GREETING,
 } from "@/lib/telnyx/voice-orchestrator"
 
@@ -189,7 +190,10 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     // Bridge now, before the agent answers, so Telnyx plays ringback to the
     // caller while the agent leg rings. (We answered the caller leg early to
     // orchestrate, which stopped the carrier ringback.)
-    await bridgeLegs(payload.call_control_id, agentLegId, { playRingtone: true })
+    await bridgeLegs(payload.call_control_id, agentLegId, {
+      playRingtone: true,
+      parkAfterUnbridge: true,
+    })
   } catch (err) {
     console.error("⚠️ Failed to dial/bridge agent; sending caller to voicemail:", err)
     await beginVoicemail(supabase, payload.call_control_id)
@@ -208,8 +212,21 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
       .eq("telnyx_call_id", agentState.aLegId)
       .maybeSingle()
     if (callerCall?.status === "initiated") {
+      // Agent never answered → send the (parked) caller leg to voicemail.
       await beginVoicemail(supabase, agentState.aLegId)
+    } else if (callerCall?.status === "answered") {
+      // Agent answered then hung up first. The caller leg is parked (not torn
+      // down) because we bridged with park_after_unbridge, so hang it up
+      // explicitly; its own call.hangup then finalizes the row to "completed".
+      try {
+        await hangupCall(agentState.aLegId)
+      } catch (err) {
+        console.error("⚠️ Failed to hang up parked caller leg after agent hangup:", err)
+      }
     }
+    // Other statuses (e.g. "voicemail", "completed") are intentionally left
+    // alone: the caller leg is being recorded or already finalized, and its own
+    // call.hangup will close it out.
     return
   }
 

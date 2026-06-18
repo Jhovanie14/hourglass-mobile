@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // vi.mock is hoisted; use vi.hoisted so the spies exist when the factory runs.
-const { dial, bridge } = vi.hoisted(() => ({ dial: vi.fn(), bridge: vi.fn() }))
+const { dial, bridge, hangup } = vi.hoisted(() => ({ dial: vi.fn(), bridge: vi.fn(), hangup: vi.fn() }))
 
 vi.mock("./client", () => ({
-  getTelnyxClient: () => ({ calls: { dial, actions: { bridge } } }),
+  getTelnyxClient: () => ({ calls: { dial, actions: { bridge, hangup } } }),
   withRetry: (fn: () => Promise<unknown>) => fn(),
 }))
 
-import { dialAgent, bridgeLegs } from "./voice-orchestrator"
+import { dialAgent, bridgeLegs, hangupCall } from "./voice-orchestrator"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -53,5 +53,31 @@ describe("bridgeLegs", () => {
     bridge.mockResolvedValue({})
     await bridgeLegs("caller-leg-1", "agent-leg-xyz")
     expect(bridge.mock.calls[0][1]).not.toHaveProperty("play_ringtone")
+  })
+
+  it("sends park_after_unbridge 'self' when parkAfterUnbridge is requested", async () => {
+    bridge.mockResolvedValue({})
+    await bridgeLegs("caller-leg-1", "agent-leg-xyz", { parkAfterUnbridge: true })
+    expect(bridge).toHaveBeenCalledWith(
+      "caller-leg-1",
+      expect.objectContaining({ park_after_unbridge: "self" })
+    )
+  })
+
+  it("omits park_after_unbridge by default", async () => {
+    bridge.mockResolvedValue({})
+    await bridgeLegs("caller-leg-1", "agent-leg-xyz")
+    expect(bridge.mock.calls[0][1]).not.toHaveProperty("park_after_unbridge")
+  })
+})
+
+describe("hangupCall", () => {
+  it("hangs up the given leg with a command_id", async () => {
+    hangup.mockResolvedValue({})
+    await hangupCall("leg-1")
+    expect(hangup).toHaveBeenCalledWith(
+      "leg-1",
+      expect.objectContaining({ command_id: expect.any(String) })
+    )
   })
 })
