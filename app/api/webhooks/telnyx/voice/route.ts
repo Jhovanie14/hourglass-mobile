@@ -224,6 +224,9 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
         console.error("⚠️ Failed to hang up parked caller leg after agent hangup:", err)
       }
     }
+    // Other statuses (e.g. "voicemail", "completed") are intentionally left
+    // alone: the caller leg is being recorded or already finalized, and its own
+    // call.hangup will close it out.
     return
   }
 
