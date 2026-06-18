@@ -85,6 +85,12 @@ export async function bridgeLegs(
   )
 }
 
+/** Hang up a call leg by its call_control_id. */
+export async function hangupCall(callControlId: string): Promise<void> {
+  const telnyx = getTelnyxClient()
+  await withRetry(() => telnyx.calls.actions.hangup(callControlId, { command_id: commandId() }))
+}
+
 /** Speak the greeting on the caller leg to begin the voicemail flow. */
 export async function startVoicemail(aLegId: string, greeting: string): Promise<void> {
   const telnyx = getTelnyxClient()

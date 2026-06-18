@@ -6,6 +6,7 @@ import {
   dialAgent,
   bridgeLegs,
   startVoicemail,
+  hangupCall,
   DEFAULT_GREETING,
 } from "@/lib/telnyx/voice-orchestrator"
 
@@ -211,7 +212,17 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
       .eq("telnyx_call_id", agentState.aLegId)
       .maybeSingle()
     if (callerCall?.status === "initiated") {
+      // Agent never answered → send the (parked) caller leg to voicemail.
       await beginVoicemail(supabase, agentState.aLegId)
+    } else if (callerCall?.status === "answered") {
+      // Agent answered then hung up first. The caller leg is parked (not torn
+      // down) because we bridged with park_after_unbridge, so hang it up
+      // explicitly; its own call.hangup then finalizes the row to "completed".
+      try {
+        await hangupCall(agentState.aLegId)
+      } catch (err) {
+        console.error("⚠️ Failed to hang up parked caller leg after agent hangup:", err)
+      }
     }
     return
   }
