@@ -78,6 +78,39 @@ export function useWebRTCClient(
     }
   }, [])
 
+  // Presence heartbeat: while the WebRTC client is connected, tell the server
+  // this agent is online every ~15s so inbound ring-all can reach them. No
+  // explicit offline ping — the server drops agents whose heartbeat goes stale.
+  useEffect(() => {
+    if (!isReady) return
+    let active = true
+
+    async function beat() {
+      try {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!active) return
+        await fetch("/api/calls/presence", {
+          method: "POST",
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
+        })
+      } catch (err) {
+        console.warn("WebRTC: presence heartbeat failed", err)
+      }
+    }
+
+    beat()
+    const id = setInterval(beat, 15_000)
+    return () => {
+      active = false
+      clearInterval(id)
+    }
+  }, [isReady])
+
   const newCall = useCallback(
     (to: string, callerNumber: string): TelnyxCall | null => {
       const client = clientRef.current
