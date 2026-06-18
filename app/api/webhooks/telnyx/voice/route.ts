@@ -6,7 +6,6 @@ import {
   dialAgent,
   bridgeLegs,
   startVoicemail,
-  hangupCall,
   DEFAULT_GREETING,
 } from "@/lib/telnyx/voice-orchestrator"
 
@@ -160,15 +159,17 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
 async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const agentState = decodeClientState(payload.client_state)
 
-  // Agent (leg B) picked up. The legs were already bridged at dial time (with
-  // ringback), so the agent answering simply completes the connection — just
-  // mark the caller's call answered.
+  // Agent (leg B) picked up → bridge to the caller (leg A).
   if (agentState?.role === "agent") {
-    const { error } = await supabase
-      .from("calls")
-      .update({ status: "answered", started_at: new Date().toISOString() })
-      .eq("telnyx_call_id", agentState.aLegId)
-    if (error) console.error("⚠️ Failed to mark call answered:", error)
+    try {
+      await bridgeLegs(agentState.aLegId, payload.call_control_id)
+      await supabase
+        .from("calls")
+        .update({ status: "answered", started_at: new Date().toISOString() })
+        .eq("telnyx_call_id", agentState.aLegId)
+    } catch (err) {
+      console.error("⚠️ Failed to bridge agent leg:", err)
+    }
     return
   }
 
@@ -181,21 +182,14 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
   if (!call) return
 
   try {
-    const agentLegId = await dialAgent({
+    await dialAgent({
       aLegId: payload.call_control_id,
       callId: call.id,
       didNumber: payload.to, // owned DID the customer dialed
       callerNumber: payload.from, // shown to the agent as caller ID
     })
-    // Bridge now, before the agent answers, so Telnyx plays ringback to the
-    // caller while the agent leg rings. (We answered the caller leg early to
-    // orchestrate, which stopped the carrier ringback.)
-    await bridgeLegs(payload.call_control_id, agentLegId, {
-      playRingtone: true,
-      parkAfterUnbridge: true,
-    })
   } catch (err) {
-    console.error("⚠️ Failed to dial/bridge agent; sending caller to voicemail:", err)
+    console.error("⚠️ Failed to dial agent; sending caller to voicemail:", err)
     await beginVoicemail(supabase, payload.call_control_id)
   }
 }
@@ -212,21 +206,8 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
       .eq("telnyx_call_id", agentState.aLegId)
       .maybeSingle()
     if (callerCall?.status === "initiated") {
-      // Agent never answered → send the (parked) caller leg to voicemail.
       await beginVoicemail(supabase, agentState.aLegId)
-    } else if (callerCall?.status === "answered") {
-      // Agent answered then hung up first. The caller leg is parked (not torn
-      // down) because we bridged with park_after_unbridge, so hang it up
-      // explicitly; its own call.hangup then finalizes the row to "completed".
-      try {
-        await hangupCall(agentState.aLegId)
-      } catch (err) {
-        console.error("⚠️ Failed to hang up parked caller leg after agent hangup:", err)
-      }
     }
-    // Other statuses (e.g. "voicemail", "completed") are intentionally left
-    // alone: the caller leg is being recorded or already finalized, and its own
-    // call.hangup will close it out.
     return
   }
 

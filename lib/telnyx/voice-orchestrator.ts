@@ -35,7 +35,7 @@ export async function dialAgent(params: {
   callId: string
   didNumber: string // owned DID the customer dialed (payload.to)
   callerNumber: string // customer's number, shown as caller ID
-}): Promise<string> {
+}): Promise<void> {
   const telnyx = getTelnyxClient()
   const sipUser = process.env.TELNYX_SIP_USERNAME
   const appId = process.env.TELNYX_VOICE_APP_ID
@@ -43,7 +43,7 @@ export async function dialAgent(params: {
 
   const displayName = sanitizeDisplayName(params.callerNumber)
 
-  const res = await withRetry(() =>
+  await withRetry(() =>
     telnyx.calls.dial({
       connection_id: appId,
       to: `sip:${sipUser}@sip.telnyx.com`,
@@ -59,36 +59,17 @@ export async function dialAgent(params: {
       }),
     })
   )
-
-  const agentLegId = res?.data?.call_control_id
-  if (!agentLegId) throw new Error("dialAgent: no call_control_id in Telnyx dial response")
-  return agentLegId
 }
 
-/** Bridge the agent leg (B) to the caller leg (A). When the target leg has not
- *  answered yet, pass `playRingtone` so Telnyx plays ringback to the caller. */
-export async function bridgeLegs(
-  aLegId: string,
-  bLegId: string,
-  opts: { playRingtone?: boolean; parkAfterUnbridge?: boolean } = {}
-): Promise<void> {
+/** Bridge the answered agent leg (B) to the caller leg (A). */
+export async function bridgeLegs(aLegId: string, bLegId: string): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() =>
     telnyx.calls.actions.bridge(aLegId, {
       call_control_id_to_bridge_with: bLegId,
       command_id: commandId(),
-      ...(opts.playRingtone ? { play_ringtone: true } : {}),
-      // Park the caller leg (not hang it up) when the agent leg unbridges, so a
-      // no-answer can still play the voicemail greeting + record on this leg.
-      ...(opts.parkAfterUnbridge ? { park_after_unbridge: "self" } : {}),
     })
   )
-}
-
-/** Hang up a call leg by its call_control_id. */
-export async function hangupCall(callControlId: string): Promise<void> {
-  const telnyx = getTelnyxClient()
-  await withRetry(() => telnyx.calls.actions.hangup(callControlId, { command_id: commandId() }))
 }
 
 /** Speak the greeting on the caller leg to begin the voicemail flow. */
