@@ -1,42 +1,33 @@
-import { getCurrentUser } from "@/lib/auth"
-import { createClient as createSupabaseClient } from "@supabase/supabase-js"
+import { getRequestUserId } from "@/lib/auth"
+import { createAdminClient } from "@/lib/admin"
+import { getTelnyxClient } from "@/lib/telnyx/client"
+import { getOrCreateAgentCredential } from "@/lib/telnyx/agent-credentials"
 
 export const runtime = "nodejs"
 
-async function isAuthorized(req: Request): Promise<boolean> {
-  // 1. Cookie-based session (the web app)
-  const user = await getCurrentUser()
-  if (user) return true
-
-  // 2. Bearer access token (the extension panel)
-  const authHeader = req.headers.get("authorization") ?? ""
-  const token = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null
-  if (!token) return false
-
-  const supabase = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
-  const { data, error } = await supabase.auth.getUser(token)
-  return !error && !!data.user
-}
-
 export async function GET(req: Request) {
-  if (!(await isAuthorized(req))) {
+  const userId = await getRequestUserId(req)
+  if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const login = process.env.TELNYX_SIP_USERNAME
-  const password = process.env.TELNYX_SIP_PASSWORD
-
-  if (!login || !password) {
-    return Response.json(
-      { error: "TELNYX_SIP_USERNAME or TELNYX_SIP_PASSWORD not set" },
-      { status: 500 }
-    )
+  const connectionId = process.env.TELNYX_CREDENTIAL_CONNECTION_ID
+  if (!connectionId) {
+    return Response.json({ error: "TELNYX_CREDENTIAL_CONNECTION_ID not set" }, { status: 500 })
   }
 
-  return Response.json({ login, password })
+  try {
+    const admin = createAdminClient()
+    const telnyx = getTelnyxClient()
+    const { login, password } = await getOrCreateAgentCredential(
+      admin,
+      telnyx,
+      userId,
+      connectionId
+    )
+    return Response.json({ login, password })
+  } catch (err) {
+    console.error("⚠️ Failed to provision/return agent SIP credential:", err)
+    return Response.json({ error: "Failed to obtain credential" }, { status: 500 })
+  }
 }

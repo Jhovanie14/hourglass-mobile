@@ -3,11 +3,21 @@ import { verifyTelnyxWebhook } from "@/lib/telnyx/webhook"
 import { decodeClientState } from "@/lib/telnyx/client-state"
 import {
   answerCaller,
-  dialAgent,
+  dialAgentLeg,
+  hangupLeg,
   bridgeLegs,
   startVoicemail,
   DEFAULT_GREETING,
 } from "@/lib/telnyx/voice-orchestrator"
+import {
+  getOnlineReachableAgents,
+  recordAgentLegs,
+  claimCall,
+  markLegAnswered,
+  markLegFailedIfRinging,
+  getRingingAgentLegIds,
+  getAnsweredAgentLegId,
+} from "@/lib/telnyx/ring-all"
 
 export const runtime = "nodejs"
 
@@ -122,7 +132,9 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     return
   }
 
-  // Inbound caller leg (A): log it, then answer so we can orchestrate.
+  // Inbound caller leg (A): log it as `ringing`, then fan out to all online
+  // agents WITHOUT answering A (so the carrier plays native ringback). A is
+  // answered only when an agent wins (to bridge) or when we fall to voicemail.
   const { data: phoneNumber } = await supabase
     .from("phone_numbers")
     .select("id")
@@ -135,78 +147,182 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     return
   }
 
-  const { error: insertError } = await supabase.from("calls").upsert(
+  await supabase.from("calls").upsert(
     {
       phone_number_id: phoneNumber.id,
       contact_number: payload.from,
       direction: "inbound",
-      status: "initiated",
+      status: "ringing",
       telnyx_call_id: payload.call_control_id,
     },
     { onConflict: "telnyx_call_id", ignoreDuplicates: true }
   )
-  if (insertError) {
-    console.error("⚠️ Failed to insert inbound call:", insertError)
-  }
 
-  try {
-    await answerCaller(payload.call_control_id)
-  } catch (err) {
-    console.error("⚠️ Failed to answer inbound caller:", err)
-  }
-}
-
-async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallPayload) {
-  const agentState = decodeClientState(payload.client_state)
-
-  // Agent (leg B) picked up → bridge to the caller (leg A).
-  if (agentState?.role === "agent") {
-    try {
-      await bridgeLegs(agentState.aLegId, payload.call_control_id)
-      await supabase
-        .from("calls")
-        .update({ status: "answered", started_at: new Date().toISOString() })
-        .eq("telnyx_call_id", agentState.aLegId)
-    } catch (err) {
-      console.error("⚠️ Failed to bridge agent leg:", err)
-    }
-    return
-  }
-
-  // Caller (leg A) was answered by us → look up DB id, then dial the agent.
   const { data: call } = await supabase
     .from("calls")
     .select("id")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
+  if (!call) {
+    console.error("⚠️ Inbound call row missing right after upsert:", payload.call_control_id)
+    return
+  }
+
+  const agents = await getOnlineReachableAgents(supabase)
+
+  if (agents.length === 0) {
+    // Nobody to ring → voicemail. Mark, then answer A; greeting plays on A's answered.
+    await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
+    try {
+      await answerCaller(payload.call_control_id)
+    } catch (err) {
+      console.error("⚠️ Failed to answer caller for voicemail (no agents):", err)
+    }
+    return
+  }
+
+  // Dial all agents in parallel; record the legs that actually got dialed.
+  const results = await Promise.allSettled(
+    agents.map((a) =>
+      dialAgentLeg({
+        aLegId: payload.call_control_id,
+        callId: call.id,
+        didNumber: payload.to,
+        callerNumber: payload.from,
+        sipUsername: a.sipUsername,
+        userId: a.userId,
+      }).then((agentLegId) => ({ agentLegId, userId: a.userId }))
+    )
+  )
+
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.error(`⚠️ dialAgentLeg failed for agent ${agents[i].userId}:`, r.reason)
+    }
+  })
+
+  const dialed = results
+    .filter((r): r is PromiseFulfilledResult<{ agentLegId: string; userId: string }> =>
+      r.status === "fulfilled"
+    )
+    .map((r) => r.value)
+
+  if (dialed.length === 0) {
+    // Every dial failed → voicemail.
+    await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
+    try {
+      await answerCaller(payload.call_control_id)
+    } catch (err) {
+      console.error("⚠️ Failed to answer caller for voicemail (all dials failed):", err)
+    }
+    return
+  }
+
+  await recordAgentLegs(supabase, call.id, dialed)
+}
+
+async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallPayload) {
+  const agentState = decodeClientState(payload.client_state)
+
+  // An agent (leg B) picked up → try to claim the caller. First-answer-wins.
+  if (agentState?.role === "agent") {
+    const won = await claimCall(supabase, agentState.aLegId)
+    if (!won) {
+      // Someone else already won → drop this losing leg.
+      try {
+        await hangupLeg(payload.call_control_id)
+      } catch (err) {
+        console.error("⚠️ Failed to hang up losing agent leg:", err)
+      }
+      return
+    }
+
+    // Winner: record it, cancel siblings, then answer A. The bridge is issued
+    // when A's own call.answered arrives (below).
+    await markLegAnswered(supabase, payload.call_control_id)
+    const ringing = await getRingingAgentLegIds(supabase, agentState.callId)
+    await Promise.allSettled(
+      ringing
+        .filter((legId) => legId !== payload.call_control_id)
+        .map((legId) => hangupLeg(legId))
+    )
+    try {
+      await answerCaller(agentState.aLegId)
+    } catch (err) {
+      console.error("⚠️ Failed to answer caller after agent won:", err)
+    }
+    return
+  }
+
+  // Caller leg (A) was answered by us. What happens next depends on status.
+  const { data: call } = await supabase
+    .from("calls")
+    .select("id, status, phone_numbers(voicemail_greeting)")
+    .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
   if (!call) return
 
+  if (call.status === "answered") {
+    // A winner is waiting → bridge A to the answered agent leg.
+    const agentLeg = await getAnsweredAgentLegId(supabase, call.id)
+    if (agentLeg) {
+      try {
+        await bridgeLegs(payload.call_control_id, agentLeg)
+        await supabase
+          .from("calls")
+          .update({ started_at: new Date().toISOString() })
+          .eq("id", call.id)
+        return
+      } catch (err) {
+        console.error("⚠️ Bridge failed; falling back to voicemail:", err)
+      }
+    }
+    // Winner vanished or bridge failed → voicemail on the (already answered) A.
+    await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
+    await speakGreeting(payload.call_control_id, call)
+    return
+  }
+
+  if (call.status === "voicemail") {
+    await speakGreeting(payload.call_control_id, call)
+  }
+}
+
+/** Resolve the per-number greeting and speak it on the answered caller leg. */
+async function speakGreeting(aLegId: string, call: { phone_numbers?: unknown }) {
+  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
+  const greeting =
+    (pn as { voicemail_greeting: string | null } | null)?.voicemail_greeting ?? DEFAULT_GREETING
   try {
-    await dialAgent({
-      aLegId: payload.call_control_id,
-      callId: call.id,
-      didNumber: payload.to, // owned DID the customer dialed
-      callerNumber: payload.from, // shown to the agent as caller ID
-    })
+    await startVoicemail(aLegId, greeting)
   } catch (err) {
-    console.error("⚠️ Failed to dial agent; sending caller to voicemail:", err)
-    await beginVoicemail(supabase, payload.call_control_id)
+    console.error("⚠️ Failed to start voicemail greeting:", err)
   }
 }
 
 async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const agentState = decodeClientState(payload.client_state)
 
-  // Agent leg (B) ended. If the caller leg was never bridged (still "initiated"),
-  // the agent was offline or didn't answer → voicemail.
+  // Agent leg (B) ended. Mark it failed (if it was still ringing); if no legs
+  // are ringing and nobody won, the caller falls to voicemail.
   if (agentState?.role === "agent") {
+    await markLegFailedIfRinging(supabase, payload.call_control_id)
+
+    const stillRinging = await getRingingAgentLegIds(supabase, agentState.callId)
+    if (stillRinging.length > 0) return
+
     const { data: callerCall } = await supabase
       .from("calls")
-      .select("status")
+      .select("id, status")
       .eq("telnyx_call_id", agentState.aLegId)
       .maybeSingle()
-    if (callerCall?.status === "initiated") {
-      await beginVoicemail(supabase, agentState.aLegId)
+    if (callerCall?.status === "ringing") {
+      await supabase.from("calls").update({ status: "voicemail" }).eq("id", callerCall.id)
+      try {
+        await answerCaller(agentState.aLegId)
+      } catch (err) {
+        console.error("⚠️ Failed to answer caller for voicemail (all agents failed):", err)
+      }
     }
     return
   }
@@ -217,6 +333,12 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
     .select("id, status, started_at, direction, phone_number_id")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
+
+  // Caller hung up while still ringing → cancel any agent legs still ringing.
+  if (call?.status === "ringing" && call?.id) {
+    const ringing = await getRingingAgentLegIds(supabase, call.id)
+    await Promise.allSettled(ringing.map((legId) => hangupLeg(legId)))
+  }
 
   const wasAnswered = call?.status === "answered" || call?.status === "completed"
   const endedAt = payload.end_time ?? new Date().toISOString()
@@ -273,30 +395,6 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
     if (error) {
       console.error("⚠️ Failed to insert missed_call notification:", error)
     }
-  }
-}
-
-/** Resolve the greeting, flip the caller's call to voicemail (idempotently), and speak it. */
-async function beginVoicemail(supabase: SupabaseClient, aLegId: string) {
-  const { data: call } = await supabase
-    .from("calls")
-    .select("id, status, phone_numbers(voicemail_greeting)")
-    .eq("telnyx_call_id", aLegId)
-    .maybeSingle()
-
-  // Idempotency: only start once.
-  if (!call || call.status === "voicemail") return
-
-  await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
-
-  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
-  const greeting =
-    (pn as { voicemail_greeting: string | null } | null)?.voicemail_greeting ?? DEFAULT_GREETING
-
-  try {
-    await startVoicemail(aLegId, greeting)
-  } catch (err) {
-    console.error("⚠️ Failed to start voicemail greeting:", err)
   }
 }
 
