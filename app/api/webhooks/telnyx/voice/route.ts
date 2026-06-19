@@ -195,6 +195,12 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     )
   )
 
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.error(`⚠️ dialAgentLeg failed for agent ${agents[i].userId}:`, r.reason)
+    }
+  })
+
   const dialed = results
     .filter((r): r is PromiseFulfilledResult<{ agentLegId: string; userId: string }> =>
       r.status === "fulfilled"
@@ -273,21 +279,17 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     }
     // Winner vanished or bridge failed → voicemail on the (already answered) A.
     await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
-    await speakGreeting(supabase, payload.call_control_id, call)
+    await speakGreeting(payload.call_control_id, call)
     return
   }
 
   if (call.status === "voicemail") {
-    await speakGreeting(supabase, payload.call_control_id, call)
+    await speakGreeting(payload.call_control_id, call)
   }
 }
 
 /** Resolve the per-number greeting and speak it on the answered caller leg. */
-async function speakGreeting(
-  _supabase: SupabaseClient,
-  aLegId: string,
-  call: { phone_numbers?: unknown }
-) {
+async function speakGreeting(aLegId: string, call: { phone_numbers?: unknown }) {
   const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
   const greeting =
     (pn as { voicemail_greeting: string | null } | null)?.voicemail_greeting ?? DEFAULT_GREETING
