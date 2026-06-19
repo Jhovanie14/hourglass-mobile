@@ -55,10 +55,11 @@ export async function recordAgentLegs(
 export async function claimCall(
   admin: Admin,
   aLegId: string,
-  now: Date = new Date()
+  now: Date = new Date() // recorded as started_at on the winning calls row
 ): Promise<boolean> {
   const { data, error } = await admin
     .from("calls")
+    // started_at is an existing column on calls (also written by the voice webhook on bridge).
     .update({ status: "answered", started_at: now.toISOString() })
     .eq("telnyx_call_id", aLegId)
     .eq("status", "ringing")

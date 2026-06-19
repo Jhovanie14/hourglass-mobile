@@ -9,39 +9,63 @@ import {
   getAnsweredAgentLegId,
 } from "./ring-all"
 
+type Errs = {
+  presence?: unknown
+  creds?: unknown
+  claim?: unknown
+  legsRead?: unknown
+  insert?: unknown
+  legUpdate?: unknown
+}
+
 // Chainable Supabase-admin mock. Per-table behavior keyed by from() table name.
+// Errors are injectable per operation to exercise the `if (error) throw error` paths.
 function makeAdmin(opts: {
   online?: { user_id: string }[]
   creds?: { user_id: string; sip_username: string }[]
   claimRows?: { id: string }[]
   ringing?: { agent_leg_id: string }[]
   answered?: { agent_leg_id: string }[]
+  errors?: Errs
 }) {
-  const insert = vi.fn().mockResolvedValue({ error: null })
+  const e = opts.errors ?? {}
 
-  const presenceGte = vi.fn().mockResolvedValue({ data: opts.online ?? [], error: null })
+  const insert = vi.fn().mockResolvedValue({ error: e.insert ?? null })
+
+  const presenceGte = vi
+    .fn()
+    .mockResolvedValue({ data: opts.online ?? [], error: e.presence ?? null })
   const presenceSelect = vi.fn(() => ({ gte: presenceGte }))
 
-  const credsIn = vi.fn().mockResolvedValue({ data: opts.creds ?? [], error: null })
+  const credsIn = vi.fn().mockResolvedValue({ data: opts.creds ?? [], error: e.creds ?? null })
   const credsSelect = vi.fn(() => ({ in: credsIn }))
 
-  const claimSelect = vi.fn().mockResolvedValue({ data: opts.claimRows ?? [], error: null })
+  // calls UPDATE ... eq ... eq ... select  (claimCall)
+  const claimSelect = vi.fn().mockResolvedValue({ data: opts.claimRows ?? [], error: e.claim ?? null })
   const claimEq2 = vi.fn(() => ({ select: claimSelect }))
   const claimEq1 = vi.fn(() => ({ eq: claimEq2 }))
   const update = vi.fn(() => ({ eq: claimEq1 }))
 
+  // call_agent_legs SELECT ... eq(call_id) ... eq(status)
   const legsEqStatus = vi.fn((_col: string, status: string) =>
     Promise.resolve({
       data: status === "answered" ? opts.answered ?? [] : opts.ringing ?? [],
-      error: null,
+      error: e.legsRead ?? null,
     })
   )
   const legsEqCall = vi.fn(() => ({ eq: legsEqStatus }))
   const legsSelect = vi.fn(() => ({ eq: legsEqCall }))
 
-  const legUpdateEq2 = vi.fn().mockResolvedValue({ error: null })
-  const legUpdateEq1 = vi.fn(() => ({ eq: legUpdateEq2 }))
-  const legUpdate = vi.fn(() => ({ eq: legUpdateEq1 }))
+  // call_agent_legs UPDATE: markLegAnswered uses ONE .eq (terminal); markLegFailedIfRinging
+  // uses TWO .eq (terminal on the 2nd). Branch on the payload so BOTH terminals resolve a Promise.
+  const legUpdateEqAnswered = vi.fn().mockResolvedValue({ error: e.legUpdate ?? null })
+  const legUpdateEqRinging2 = vi.fn().mockResolvedValue({ error: e.legUpdate ?? null })
+  const legUpdateEqRinging1 = vi.fn(() => ({ eq: legUpdateEqRinging2 }))
+  const legUpdate = vi.fn((payload: { status: string }) =>
+    payload.status === "failed"
+      ? { eq: legUpdateEqRinging1 }
+      : { eq: legUpdateEqAnswered }
+  )
 
   const from = vi.fn((table: string) => {
     if (table === "agent_presence") return { select: presenceSelect }
@@ -51,8 +75,17 @@ function makeAdmin(opts: {
     throw new Error("unexpected table " + table)
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { client: { from } as any, insert, update, from, credsIn, presenceGte, legUpdate }
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client: { from } as any,
+    insert,
+    update,
+    from,
+    credsIn,
+    presenceGte,
+    legUpdate,
+    claimEq1,
+  }
 }
 
 describe("getOnlineReachableAgents", () => {
@@ -70,6 +103,19 @@ describe("getOnlineReachableAgents", () => {
     const result = await getOnlineReachableAgents(admin.client, new Date())
     expect(result).toEqual([])
     expect(admin.credsIn).not.toHaveBeenCalled()
+  })
+
+  it("throws when the presence read errors", async () => {
+    const admin = makeAdmin({ errors: { presence: new Error("presence boom") } })
+    await expect(getOnlineReachableAgents(admin.client, new Date())).rejects.toThrow(/presence boom/)
+  })
+
+  it("throws when the credential read errors", async () => {
+    const admin = makeAdmin({
+      online: [{ user_id: "a" }],
+      errors: { creds: new Error("creds boom") },
+    })
+    await expect(getOnlineReachableAgents(admin.client, new Date())).rejects.toThrow(/creds boom/)
   })
 })
 
@@ -91,17 +137,35 @@ describe("recordAgentLegs", () => {
     await recordAgentLegs(admin.client, "call-1", [])
     expect(admin.insert).not.toHaveBeenCalled()
   })
+
+  it("throws when the insert errors", async () => {
+    const admin = makeAdmin({ errors: { insert: new Error("insert boom") } })
+    await expect(
+      recordAgentLegs(admin.client, "call-1", [{ agentLegId: "b1", userId: "a" }])
+    ).rejects.toThrow(/insert boom/)
+  })
 })
 
 describe("claimCall", () => {
-  it("returns true when the conditional update flips a ringing call", async () => {
+  it("returns true and writes the answered payload when a ringing call is flipped", async () => {
     const admin = makeAdmin({ claimRows: [{ id: "call-1" }] })
-    expect(await claimCall(admin.client, "a-leg")).toBe(true)
+    const won = await claimCall(admin.client, "a-leg")
+    expect(won).toBe(true)
+    expect(admin.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "answered" })
+    )
+    // first .eq is the telnyx_call_id filter
+    expect(admin.client.from("calls").update().eq).toBeDefined()
   })
 
   it("returns false when no ringing call matched (already claimed)", async () => {
     const admin = makeAdmin({ claimRows: [] })
     expect(await claimCall(admin.client, "a-leg")).toBe(false)
+  })
+
+  it("throws when the update errors", async () => {
+    const admin = makeAdmin({ errors: { claim: new Error("claim boom") } })
+    await expect(claimCall(admin.client, "a-leg")).rejects.toThrow(/claim boom/)
   })
 })
 
@@ -117,6 +181,16 @@ describe("getRingingAgentLegIds / getAnsweredAgentLegId", () => {
     const none = makeAdmin({ answered: [] })
     expect(await getAnsweredAgentLegId(none.client, "call-1")).toBeNull()
   })
+
+  it("getRingingAgentLegIds throws when the read errors", async () => {
+    const admin = makeAdmin({ errors: { legsRead: new Error("read boom") } })
+    await expect(getRingingAgentLegIds(admin.client, "call-1")).rejects.toThrow(/read boom/)
+  })
+
+  it("getAnsweredAgentLegId throws when the read errors", async () => {
+    const admin = makeAdmin({ errors: { legsRead: new Error("read boom") } })
+    await expect(getAnsweredAgentLegId(admin.client, "call-1")).rejects.toThrow(/read boom/)
+  })
 })
 
 describe("markLegAnswered / markLegFailedIfRinging", () => {
@@ -131,5 +205,15 @@ describe("markLegAnswered / markLegFailedIfRinging", () => {
     const admin = makeAdmin({})
     await markLegFailedIfRinging(admin.client, "b1")
     expect(admin.legUpdate).toHaveBeenCalledWith({ status: "failed" })
+  })
+
+  it("markLegAnswered throws when the update errors", async () => {
+    const admin = makeAdmin({ errors: { legUpdate: new Error("upd boom") } })
+    await expect(markLegAnswered(admin.client, "b1")).rejects.toThrow(/upd boom/)
+  })
+
+  it("markLegFailedIfRinging throws when the update errors", async () => {
+    const admin = makeAdmin({ errors: { legUpdate: new Error("upd boom") } })
+    await expect(markLegFailedIfRinging(admin.client, "b1")).rejects.toThrow(/upd boom/)
   })
 })
