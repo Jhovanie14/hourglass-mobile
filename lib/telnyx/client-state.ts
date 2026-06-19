@@ -2,6 +2,7 @@ export type AgentLegState = {
   role: "agent"
   aLegId: string // caller leg call_control_id
   callId: string // calls.id in our DB
+  userId: string // which agent this leg targets (agent_sip_credentials.user_id)
 }
 
 /** Telnyx requires client_state to be a base64 string; it echoes it on every

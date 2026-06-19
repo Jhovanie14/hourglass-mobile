@@ -56,6 +56,7 @@ export async function dialAgent(params: {
         role: "agent",
         aLegId: params.aLegId,
         callId: params.callId,
+        userId: "", // TODO: pass per-agent userId once dialAgent is refactored (Phase 3)
       }),
     })
   )
