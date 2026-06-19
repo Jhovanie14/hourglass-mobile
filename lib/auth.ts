@@ -36,6 +36,32 @@ export async function isRequestAuthenticated(req: Request): Promise<boolean> {
 }
 
 /**
+ * Resolve the authenticated user's id from a cookie session (the web app) or an
+ * `Authorization: Bearer <access_token>` header (the extension panel). Returns
+ * null if unauthenticated.
+ */
+export async function getRequestUserId(req: Request): Promise<string | null> {
+  // 1. Cookie-based session (the web app). Claim `sub` is the user id.
+  const claims = await getCurrentUser()
+  if (claims?.sub) return claims.sub as string
+
+  // 2. Bearer access token (the extension panel).
+  const authHeader = req.headers.get("authorization") ?? ""
+  const token = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : null
+  if (!token) return null
+
+  const supabase = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  )
+  const { data, error } = await supabase.auth.getUser(token)
+  if (error || !data.user) return null
+  return data.user.id
+}
+
+/**
  * Returns the current user's role from the profiles table, or null.
  */
 export async function getCurrentRole() {
