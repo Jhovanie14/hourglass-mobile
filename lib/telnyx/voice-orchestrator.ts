@@ -25,30 +25,29 @@ export async function answerCaller(callControlId: string): Promise<void> {
   await withRetry(() => telnyx.calls.actions.answer(callControlId, { command_id: commandId() }))
 }
 
-/** Dial the WebRTC SIP credential as leg B, tagged so we can correlate it back.
- *  NOTE (proven in the Task 0 spike): `from` MUST be an owned DID (the number the
- *  customer dialed = payload.to), NOT the caller's raw number — Telnyx rejects an
- *  un-owned `from`. The caller's number is passed as `from_display_name` so the
- *  agent still sees who's calling. */
-export async function dialAgent(params: {
+/** Dial ONE agent's own SIP credential as a tagged leg B. Returns the dialed
+ *  leg's call_control_id so the caller can record it in call_agent_legs.
+ *  `from` MUST be the owned DID the customer dialed (un-owned `from` is
+ *  rejected); the caller's number is shown via from_display_name. */
+export async function dialAgentLeg(params: {
   aLegId: string
   callId: string
   didNumber: string // owned DID the customer dialed (payload.to)
   callerNumber: string // customer's number, shown as caller ID
-}): Promise<void> {
+  sipUsername: string // THIS agent's sip_username (agent_sip_credentials)
+  userId: string // THIS agent's user_id
+}): Promise<string> {
   const telnyx = getTelnyxClient()
-  const sipUser = process.env.TELNYX_SIP_USERNAME
   const appId = process.env.TELNYX_VOICE_APP_ID
-  if (!sipUser || !appId) throw new Error("TELNYX_SIP_USERNAME or TELNYX_VOICE_APP_ID not set")
+  if (!appId) throw new Error("TELNYX_VOICE_APP_ID not set")
 
   const displayName = sanitizeDisplayName(params.callerNumber)
 
-  await withRetry(() =>
+  const res = await withRetry(() =>
     telnyx.calls.dial({
       connection_id: appId,
-      to: `sip:${sipUser}@sip.telnyx.com`,
-      from: params.didNumber, // owned DID — required, un-owned `from` is rejected
-      // agent still sees the customer's number; omit if sanitizing left it empty
+      to: `sip:${params.sipUsername}@sip.telnyx.com`,
+      from: params.didNumber,
       ...(displayName ? { from_display_name: displayName } : {}),
       timeout_secs: 25,
       command_id: commandId(),
@@ -56,10 +55,20 @@ export async function dialAgent(params: {
         role: "agent",
         aLegId: params.aLegId,
         callId: params.callId,
-        userId: "", // TODO: pass per-agent userId once dialAgent is refactored (Phase 3)
+        userId: params.userId,
       }),
     })
   )
+
+  const legId = (res as { data?: { call_control_id?: string } })?.data?.call_control_id
+  if (!legId) throw new Error("Telnyx dial response missing call_control_id")
+  return legId
+}
+
+/** Hang up a single leg (cancel a ringing sibling or a losing agent leg). */
+export async function hangupLeg(callControlId: string): Promise<void> {
+  const telnyx = getTelnyxClient()
+  await withRetry(() => telnyx.calls.actions.hangup(callControlId, { command_id: commandId() }))
 }
 
 /** Bridge the answered agent leg (B) to the caller leg (A). */
