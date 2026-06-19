@@ -56,7 +56,8 @@ inbound).
 2. **Do NOT answer A.** Resolve the **online, reachable** agents:
    `getOnlineAgentUserIds()` (presence within 30s) **joined with** `agent_sip_credentials` (must have
    a credential). 
-3. If **none** → answer A and `beginVoicemail` immediately.
+3. If **none** → set `status='voicemail'` and **answer A** (the greeting is spoken when A's
+   `call.answered` fires).
 4. Otherwise **dial each agent in parallel** as a tagged leg B:
    - `to: sip:<that agent's sip_username>@sip.telnyx.com`
    - `from: payload.to` (owned DID — un-owned `from` is rejected; proven in Task 0 spike)
@@ -73,28 +74,35 @@ update calls set status='answered', started_at=now()
 where telnyx_call_id = <aLegId> and status='ringing'
 returning id
 ```
-- **Row returned (winner):** answer leg A, then `bridge(A, thisLeg)`; mark this `call_agent_legs` row
-  `answered`; **hang up all sibling `ringing` legs** for this call.
+- **Row returned (winner):** mark this `call_agent_legs` row `answered`; **hang up all sibling
+  `ringing` legs** for this call; then **answer leg A**. Do **not** bridge here — A is still
+  unanswered. The bridge is issued when A's own `call.answered` arrives (next section).
 - **No row (loser):** another agent already won → **hang up this leg**, do nothing else.
 
-`answer(A)` then `bridge(A,B)`: A must be parked before bridging, so `bridge` uses the existing
-`withRetry` to absorb the brief ordering gap. If the bridge ultimately fails → answer A +
-`beginVoicemail`.
+**Why not bridge inline?** `bridge` requires A to be answered/parked; A was just told to answer and is
+not ready yet, so an immediate `bridge` returns a non-retryable 4xx (`withRetry` only retries
+429/5xx — see `client.ts`). So we answer A and let A's `call.answered` drive the bridge. This is
+race-free.
 
 ### `call.answered` — leg A (we answered it ourselves)
-We only answer A from inside the winner path (then `bridge`) or the voicemail path (then `speak`), and
-those next actions are issued **inline, right after `answer`** in their own handlers — `answer(A)` →
-`bridge(A,B)` / `answer(A)` → `beginVoicemail`, with `withRetry` absorbing the answer→action ordering
-gap. So **A's own `call.answered` webhook needs to drive nothing** (it is effectively a no-op for
-control flow). Critically, **no agent-dial is triggered on `call.answered` anymore** — fan-out moved
-to `call.initiated`. This is the behavioral inversion from today (today A is answered first and the
-dial happens on A's `call.answered`).
+A is only ever answered by us, from the winner path or the all-failed path — so this handler is the
+single place the post-answer action runs, chosen by the caller call's current `status`:
+- **`status = 'answered'`** → a winner is waiting: look up that call's `answered` leg in
+  `call_agent_legs` and `bridge(A, agentLeg)`; set `started_at`. If the bridge fails (e.g. the winner
+  hung up in the gap) → `startVoicemail(A)` and set `status='voicemail'`.
+- **`status = 'voicemail'`** → `startVoicemail(A, greeting)` (the existing greeting flow).
+
+No agent-dial is triggered on any `call.answered` anymore — fan-out moved to `call.initiated`. This is
+the behavioral inversion from today (today A is answered first and the dial happens on A's
+`call.answered`).
 
 ### `call.hangup` — role=agent (an agent leg ended)
-1. Mark its `call_agent_legs` row `failed`.
-2. If **no `ringing` legs remain** for the call **and** the caller's call is still `ringing` (never
-   answered) → answer A + `beginVoicemail`. (Replaces today's single-leg "caller still initiated →
-   voicemail" check.)
+1. If its `call_agent_legs` row is still `ringing`, mark it `failed`. (An `answered` leg ending is the
+   normal end of a bridged call — handled by leg A's hangup, below — so don't touch it here.)
+2. If **no `ringing` legs remain** for the call **and** the caller's call is still `ringing` (nobody
+   won) → set `status='voicemail'` and **answer A**. The greeting is spoken when A's `call.answered`
+   fires (the `status='voicemail'` branch above). Replaces today's single-leg "caller still initiated
+   → voicemail" check.
 
 ### `call.hangup` — leg A (caller hung up)
 - If the call was never `answered`: **cancel all still-`ringing` agent legs** for this call, then
@@ -102,10 +110,12 @@ dial happens on A's `call.answered`).
 - If it was `answered`/`completed`: existing finalize logic (duration, `completed`) unchanged.
 
 ### Voicemail & recording — UNCHANGED
-Once A is answered and `beginVoicemail` runs, the existing path is reused verbatim:
-`beginVoicemail` → `call.speak.ended` → `startRecording({ play_beep:true })` →
-`call.recording.saved` → store + notify. This is the part that broke before; here it is the same
-code, reached via "all agents failed/none online" instead of "single agent failed."
+Going to voicemail is always two steps now: (1) set `status='voicemail'` and **answer A**; (2) speak
+the greeting when A's `call.answered` arrives. Once the greeting is speaking, the existing path is
+reused verbatim: `call.speak.ended` → `startRecording({ play_beep:true })` → `call.recording.saved` →
+store + notify. The greeting + recording code is the part that broke before; here it is unchanged,
+only the *trigger* differs (reached via "all agents failed / none online", and only ever on a
+freshly-answered, never-bridged leg).
 
 ## Data model
 
@@ -142,15 +152,18 @@ schema migration — only a new value and the conditional-update lock that depen
 
 ## Edge cases
 
-- **Zero online agents** → answer A + immediate voicemail.
+- **Zero online agents** → `status='voicemail'` + answer A; greeting on A's `call.answered`.
 - **Online agent without a credential** → excluded by the presence ⋈ credentials join; never dialed.
 - **Stale presence** (tab closed <30s ago) → leg dialed but fails fast (no registration); counted as
   a `failed` leg; doesn't block siblings or voicemail.
-- **Caller hangs up during ring** → cancel all `ringing` agent legs; log `missed`.
+- **Caller hangs up during ring** → leg-A hangup while `status='ringing'`: cancel all `ringing` agent
+  legs; log `missed`.
 - **Two agents answer near-simultaneously** → conditional-update lock yields exactly one winner; the
   loser's leg is hung up.
-- **Winner's bridge fails** → answer A + voicemail.
-- **All agent legs fail/time out** → on the last leg's hangup, answer A + voicemail.
+- **Winner hangs up before A's `call.answered`** → bridge fails in the leg-A handler → fall back to
+  `startVoicemail(A)` + `status='voicemail'` (A is already answered, so speak directly).
+- **All agent legs fail/time out** → on the last `ringing` leg's hangup, `status='voicemail'` +
+  answer A; greeting on A's `call.answered`.
 
 ## Security
 
