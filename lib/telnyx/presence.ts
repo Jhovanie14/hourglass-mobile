@@ -46,3 +46,20 @@ export async function getOnlineAgentUserIds(
   if (error) throw error
   return (data ?? []).map((row: { user_id: string }) => row.user_id)
 }
+
+/**
+ * Immediately drop an agent from the online set (manual "go offline").
+ *
+ * Deletes the agent's single `agent_presence` row so ring-all stops dialing them
+ * right away, instead of waiting out the ~30s staleness window.
+ */
+export async function expirePresence(
+  admin: Admin,
+  userId: string
+): Promise<void> {
+  const { error } = await admin
+    .from("agent_presence")
+    .delete()
+    .eq("user_id", userId)
+  if (error) throw error
+}
