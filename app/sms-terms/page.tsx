@@ -42,13 +42,20 @@ export default function SmsTermsPage() {
       <section className="mt-9 space-y-3">
         <h2 className="text-xl font-semibold">2. How you opt in</h2>
         <p className="leading-relaxed">
-          Consent is collected verbally during inbound calls to{" "}
-          <strong>{CONTACT_PHONE}</strong>. During the call, our representative explains
-          that by providing your mobile number you agree to receive these text messages,
-          that message frequency varies, that message and data rates may apply, and that
-          you may reply <code className="rounded bg-muted px-1.5 py-0.5">STOP</code> to opt
-          out or <code className="rounded bg-muted px-1.5 py-0.5">HELP</code> for help. We
-          send a one-time confirmation text after you agree.
+          You can opt in on our web sign-up form at{" "}
+          <a className="text-primary underline" href="/sms-signup">
+            www.megestic.com/sms-signup
+          </a>
+          , where you enter your mobile number and check a box agreeing to
+          receive these messages. Consent may also be collected verbally during
+          inbound calls to <strong>{CONTACT_PHONE}</strong>, where our
+          representative explains that by providing your mobile number you agree
+          to receive these text messages, that message frequency varies, that
+          message and data rates may apply, and that you may reply{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5">STOP</code> to opt out
+          or <code className="rounded bg-muted px-1.5 py-0.5">HELP</code> for
+          help. In both cases we send a one-time confirmation text after you
+          agree.
         </p>
       </section>
 

@@ -1,7 +1,22 @@
 "use server"
 
+import { createAdminClient } from "@/lib/admin"
 import { createClient } from "@/lib/server"
 import type { Message } from "@/types/conversations"
+
+/**
+ * Returns true if the contact has opted out of texts. The suppression table is
+ * service-role only (RLS, no public policies), so this uses the admin client.
+ */
+async function isOptedOut(phone: string): Promise<boolean> {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from("sms_opt_outs")
+    .select("phone")
+    .eq("phone", phone)
+    .maybeSingle()
+  return !!data
+}
 
 type SendMessageInput = {
   conversationId: string
@@ -39,6 +54,14 @@ export async function sendMessage(input: SendMessageInput): Promise<SendResult> 
   const { data: claims } = await supabase.auth.getClaims()
   if (!claims?.claims) {
     return { ok: false, error: "You must be signed in." }
+  }
+
+  // Consent guard — never text someone who has opted out.
+  if (await isOptedOut(to)) {
+    return {
+      ok: false,
+      error: "This contact has opted out of text messages.",
+    }
   }
 
   // The number we send FROM (the inbox's own phone number).
@@ -221,6 +244,11 @@ export async function resendMessage(
 
   if (!conv) return { ok: false, error: "Conversation not found." }
 
+  // Consent guard — never resend to someone who has opted out.
+  if (await isOptedOut(conv.contact_number)) {
+    return { ok: false, error: "This contact has opted out of text messages." }
+  }
+
   const { data: phoneNumber } = await supabase
     .from("phone_numbers")
     .select("phone_number")
@@ -267,6 +295,35 @@ export async function resendMessage(
     .single()
 
   return { ok: true, message: updated as Message }
+}
+
+/**
+ * Manually opt a contact out of (or back into) texts — for opt-out requests
+ * made by voice or in person, which Telnyx never sees. Recording an opt-out
+ * here makes sendMessage/resendMessage refuse that number.
+ */
+export async function setContactOptOut(
+  phone: string,
+  optedOut: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { data: claims } = await supabase.auth.getClaims()
+  if (!claims?.claims) return { ok: false, error: "Not signed in." }
+
+  const admin = createAdminClient()
+
+  if (optedOut) {
+    const { error } = await admin.from("sms_opt_outs").upsert(
+      { phone, source: "voice:agent", note: "Opt-out recorded by agent" },
+      { onConflict: "phone", ignoreDuplicates: true }
+    )
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  }
+
+  const { error } = await admin.from("sms_opt_outs").delete().eq("phone", phone)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
 }
 
 async function touchConversation(
