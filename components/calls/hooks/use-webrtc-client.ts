@@ -10,7 +10,8 @@ type Notification = { type: string; call?: TelnyxCall }
 
 export function useWebRTCClient(
   audioRef: RefObject<HTMLAudioElement | null>,
-  onNotification: (n: Notification) => void
+  onNotification: (n: Notification) => void,
+  online: boolean
 ) {
   const clientRef = useRef<InstanceType<typeof import("@telnyx/webrtc").TelnyxRTC> | null>(null)
   const onNotificationRef = useRef(onNotification)
@@ -78,14 +79,14 @@ export function useWebRTCClient(
     }
   }, [])
 
-  // Presence heartbeat: while the WebRTC client is connected, tell the server
-  // this agent is online every ~15s so inbound ring-all can reach them. No
-  // explicit offline ping — the server drops agents whose heartbeat goes stale.
+  // Presence: while Online + connected, heartbeat every ~15s so ring-all can
+  // reach this agent. Going Offline stops the heartbeat AND expires the presence
+  // row immediately (DELETE), so the agent leaves the dial set at once.
   useEffect(() => {
     if (!isReady) return
     let active = true
 
-    async function beat() {
+    async function ping(method: "POST" | "DELETE") {
       try {
         const supabase = createClient()
         const {
@@ -93,23 +94,30 @@ export function useWebRTCClient(
         } = await supabase.auth.getSession()
         if (!active) return
         await fetch("/api/calls/presence", {
-          method: "POST",
+          method,
           headers: session?.access_token
             ? { Authorization: `Bearer ${session.access_token}` }
             : {},
         })
       } catch (err) {
-        console.warn("WebRTC: presence heartbeat failed", err)
+        console.warn(`WebRTC: presence ${method} failed`, err)
       }
     }
 
-    beat()
-    const id = setInterval(beat, 15_000)
+    if (!online) {
+      ping("DELETE")
+      return () => {
+        active = false
+      }
+    }
+
+    ping("POST")
+    const id = setInterval(() => ping("POST"), 15_000)
     return () => {
       active = false
       clearInterval(id)
     }
-  }, [isReady])
+  }, [isReady, online])
 
   const newCall = useCallback(
     (to: string, callerNumber: string): TelnyxCall | null => {

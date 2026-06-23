@@ -23,11 +23,15 @@ import type { PhoneNumber } from "@/types/calls"
 type WebRTCContextType = {
   isReady: boolean
   makeCall: (to: string, phoneNumber: PhoneNumber) => Promise<void>
+  online: boolean
+  setOnline: (next: boolean) => void
 }
 
 const WebRTCContext = createContext<WebRTCContextType>({
   isReady: false,
   makeCall: async () => {},
+  online: true,
+  setOnline: () => {},
 })
 
 export function useWebRTC() {
@@ -38,6 +42,9 @@ export function useWebRTC() {
 
 export function WebRTCProvider({ children }: { children: React.ReactNode }) {
   const remoteAudioRef = useRef<HTMLAudioElement>(null)
+
+  // Manual availability. Default Online each session (non-sticky).
+  const [online, setOnline] = useState(true)
 
   // Call UI state
   const [incomingCall, setIncomingCall] = useState<TelnyxCall | null>(null)
@@ -117,7 +124,11 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     [startRing, stopRing, lookupInboundPhone]
   )
 
-  const { isReady, newCall } = useWebRTCClient(remoteAudioRef, handleNotification)
+  const { isReady, newCall } = useWebRTCClient(
+    remoteAudioRef,
+    handleNotification,
+    online
+  )
 
   // ── makeCall ──────────────────────────────────────────────────────────────
 
@@ -237,7 +248,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
   }, [embedded, activeCall])
 
   return (
-    <WebRTCContext.Provider value={{ isReady, makeCall }}>
+    <WebRTCContext.Provider value={{ isReady, makeCall, online, setOnline }}>
       {children}
 
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
