@@ -18,6 +18,7 @@ import {
   PhoneIncoming,
   UserPlus,
 } from "lucide-react"
+import { PresenceToggle } from "@/components/calls/ui/presence-toggle"
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -43,6 +44,12 @@ export function SidebarNav({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return (
     <SidebarContent>
+      <SidebarGroup>
+        <SidebarGroupLabel>Availability</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <PresenceToggle className="px-2 py-1.5" />
+        </SidebarGroupContent>
+      </SidebarGroup>
       <SidebarGroup>
         <SidebarGroupLabel>Agent</SidebarGroupLabel>
         <SidebarGroupContent>

@@ -5,6 +5,7 @@ import { LogOut, Phone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useWebRTC } from "@/components/calls/webrtc-provider"
+import { PresenceToggle } from "@/components/calls/ui/presence-toggle"
 import type { PhoneNumber } from "@/types/calls"
 
 export function PanelDialer({
@@ -40,6 +41,7 @@ export function PanelDialer({
           <LogOut className="h-4 w-4" />
         </Button>
       </div>
+      <PresenceToggle />
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="panel-from" className="text-sm font-medium">
