@@ -3,6 +3,7 @@ import {
   computeFinalStatus,
   markOutboundAnswered,
   finalizeCall,
+  answeredAction,
 } from "./call-logging"
 
 // Minimal chainable Supabase-admin mock for `calls` UPDATE ... eq(telnyx_call_id).
@@ -35,6 +36,34 @@ describe("computeFinalStatus", () => {
 
   it("maps an unanswered outbound call to failed", () => {
     expect(computeFinalStatus("initiated", "outbound")).toBe("failed")
+  })
+})
+
+describe("answeredAction", () => {
+  // call.answered payloads carry NO direction, so the action must be decided
+  // from the stored call row, not the webhook payload.
+  it("marks an outbound call answered (regardless of status)", () => {
+    expect(answeredAction({ direction: "outbound", status: "initiated" })).toBe(
+      "mark_outbound_answered"
+    )
+  })
+
+  it("bridges when an inbound call already has a winning agent (answered)", () => {
+    expect(answeredAction({ direction: "inbound", status: "answered" })).toBe(
+      "bridge"
+    )
+  })
+
+  it("plays voicemail when an inbound call is in voicemail state", () => {
+    expect(answeredAction({ direction: "inbound", status: "voicemail" })).toBe(
+      "voicemail"
+    )
+  })
+
+  it("does nothing for an inbound call still ringing", () => {
+    expect(answeredAction({ direction: "inbound", status: "ringing" })).toBe(
+      "noop"
+    )
   })
 })
 
