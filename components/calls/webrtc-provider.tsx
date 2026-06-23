@@ -12,7 +12,7 @@ import {
 import type { Call as TelnyxCall } from "@telnyx/webrtc"
 import { useRingtone } from "./hooks/use-ringtone"
 import { useDuration } from "./hooks/use-duration"
-import { useCallRecords } from "./hooks/use-call-records"
+import { useInboundPhoneLookup } from "./hooks/use-inbound-phone"
 import { useWebRTCClient } from "./hooks/use-webrtc-client"
 import { IncomingCallPopup } from "./ui/incoming-call-popup"
 import { ActiveCallHud } from "./ui/active-call-hud"
@@ -54,19 +54,13 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     phone_number: string
   } | null>(null)
 
-  // DB tracking refs — not state because we don't need re-renders
-  const activeCallIdRef = useRef<string | null>(null)
-  const activeCallDirRef = useRef<"inbound" | "outbound" | null>(null)
-  const callStartedAtRef = useRef<string | null>(null)
-  const insertInboundPromiseRef = useRef<Promise<void> | null>(null)
-
   // Stable ref to activeCall for use inside notification callback
   const activeCallRef = useRef<TelnyxCall | null>(null)
   activeCallRef.current = activeCall
 
   const { start: startRing, stop: stopRing } = useRingtone()
   const duration = useDuration(callState === "active")
-  const records = useCallRecords()
+  const lookupInboundPhone = useInboundPhoneLookup()
 
   // ── Notification handler (passed to useWebRTCClient) ──────────────────────
 
@@ -79,30 +73,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
       const isTerminated = state === "hangup" || state === "destroy" || state === "purge"
 
       if (isTerminated) {
-        // Await any in-flight insertInbound before reading the call ID
-        const settle = async () => {
-          if (insertInboundPromiseRef.current) {
-            await insertInboundPromiseRef.current
-            insertInboundPromiseRef.current = null
-          }
-          const id = activeCallIdRef.current
-          const dir = activeCallDirRef.current
-          const startedAt = callStartedAtRef.current
-          if (id) {
-            if (startedAt) {
-              records.markCompleted(id, startedAt)
-            } else if (dir === "inbound") {
-              records.markMissed(id)
-            } else {
-              records.markFailed(id)
-            }
-          }
-          // Reset all tracking
-          activeCallIdRef.current = null
-          activeCallDirRef.current = null
-          callStartedAtRef.current = null
-        }
-        settle()
+        // Call records are written server-side by the Telnyx voice webhook.
         setInboundPhoneNumber(null)
         setActiveCall(null)
         setIncomingCall(null)
@@ -120,18 +91,9 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
       // Inbound ringing
       if (state === "ringing" && (call as any).direction !== "outbound") {
         if (activeCallRef.current) return
-        const callerNumber =
-          (call.options as any)?.remoteCallerNumber ??
-          (call.options as any)?.destinationNumber ??
-          "Unknown"
         const destination = (call.options as any)?.destinationNumber ?? ""
-        const telnyxId = (call as any).telnyxIDs?.telnyxCallControlId as string | undefined
-        insertInboundPromiseRef.current = records.insertInbound(callerNumber, destination, telnyxId).then((record) => {
-          if (record) {
-            activeCallIdRef.current = record.callId
-            activeCallDirRef.current = "inbound"
-            setInboundPhoneNumber(record.phoneNumber)
-          }
+        lookupInboundPhone(destination).then((phoneNumber) => {
+          if (phoneNumber) setInboundPhoneNumber(phoneNumber)
         })
         setIncomingCall(call)
         startRing()
@@ -140,11 +102,6 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
 
       // Call became active (answered by either side)
       if (state === "active") {
-        const now = new Date().toISOString()
-        callStartedAtRef.current = now
-        if (activeCallIdRef.current) {
-          records.markAnswered(activeCallIdRef.current, now)
-        }
         stopRing()
         setMuted(false)
         if (remoteAudioRef.current && (call as any).remoteStream) {
@@ -157,7 +114,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
       setCallState(state)
       setIncomingCall(null)
     },
-    [startRing, stopRing, records]
+    [startRing, stopRing, lookupInboundPhone]
   )
 
   const { isReady, newCall } = useWebRTCClient(remoteAudioRef, handleNotification)
@@ -166,18 +123,13 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
 
   const makeCall = useCallback(
     async (to: string, phoneNumber: PhoneNumber) => {
-      const callId = await records.insertOutbound(phoneNumber.id, to)
-      if (callId) {
-        activeCallIdRef.current = callId
-        activeCallDirRef.current = "outbound"
-      }
       const call = newCall(to, phoneNumber.phone_number)
       if (call) {
         setActiveCall(call)
         setCallState("trying")
       }
     },
-    [records, newCall]
+    [newCall]
   )
 
   // ── Call actions ──────────────────────────────────────────────────────────
@@ -194,24 +146,13 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     if (!incomingCall || actionBusy) return
     setActionBusy(true)
     stopRing()
-    // Mark missed now; clear refs so terminated notification doesn't double-write
-    const pendingId = activeCallIdRef.current
-    if (pendingId) {
-      // If insertInbound is still in-flight, wait for it first
-      if (insertInboundPromiseRef.current) {
-        await insertInboundPromiseRef.current
-      }
-      records.markMissed(pendingId)
-    }
-    activeCallIdRef.current = null
-    activeCallDirRef.current = null
-    callStartedAtRef.current = null
-    insertInboundPromiseRef.current = null
+    // Rejecting here just drops this agent's leg; the webhook records the call
+    // (missed/voicemail) based on what happens to the caller leg.
     await incomingCall.hangup()
     setIncomingCall(null)
     setInboundPhoneNumber(null)
     setActionBusy(false)
-  }, [incomingCall, actionBusy, stopRing, records])
+  }, [incomingCall, actionBusy, stopRing])
 
   const handleHangup = useCallback(async () => {
     await activeCall?.hangup()
