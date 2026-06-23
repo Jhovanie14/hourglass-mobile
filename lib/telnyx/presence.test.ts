@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from "vitest"
-import { recordHeartbeat, getOnlineAgentUserIds } from "./presence"
+import { recordHeartbeat, getOnlineAgentUserIds, expirePresence } from "./presence"
 
 // Minimal Supabase-admin-like mock.
 //   from(t).upsert(row, opts)                 -> { error }
 //   from(t).select(c).gte(col,val)            -> { data, error }
+//   from(t).delete().eq(col,val)              -> { error }
 function makeAdmin(opts: {
   online?: { user_id: string }[]
   readErr?: unknown
@@ -14,9 +15,11 @@ function makeAdmin(opts: {
     .fn()
     .mockResolvedValue({ data: opts.online ?? [], error: opts.readErr ?? null })
   const select = vi.fn(() => ({ gte }))
-  const from = vi.fn(() => ({ upsert, select }))
+  const deleteEq = vi.fn().mockResolvedValue({ error: opts.writeErr ?? null })
+  const del = vi.fn(() => ({ eq: deleteEq }))
+  const from = vi.fn(() => ({ upsert, select, delete: del }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { client: { from } as any, upsert, select, gte, from }
+  return { client: { from } as any, upsert, select, gte, from, del, deleteEq }
 }
 
 describe("recordHeartbeat", () => {
@@ -74,5 +77,21 @@ describe("getOnlineAgentUserIds", () => {
     await expect(
       getOnlineAgentUserIds(admin.client, new Date())
     ).rejects.toThrow(/read failed/)
+  })
+})
+
+describe("expirePresence", () => {
+  it("deletes the agent's presence row by user_id", async () => {
+    const admin = makeAdmin({})
+    await expirePresence(admin.client, "user-1")
+    expect(admin.from).toHaveBeenCalledWith("agent_presence")
+    expect(admin.deleteEq).toHaveBeenCalledWith("user_id", "user-1")
+  })
+
+  it("throws when the delete returns an error", async () => {
+    const admin = makeAdmin({ writeErr: new Error("delete failed") })
+    await expect(expirePresence(admin.client, "user-1")).rejects.toThrow(
+      /delete failed/
+    )
   })
 })
