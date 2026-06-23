@@ -18,6 +18,7 @@ import {
   getRingingAgentLegIds,
   getAnsweredAgentLegId,
 } from "@/lib/telnyx/ring-all"
+import { finalizeCall, markOutboundAnswered } from "@/lib/telnyx/call-logging"
 
 export const runtime = "nodejs"
 
@@ -254,6 +255,13 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     return
   }
 
+  // Outbound (softphone-originated) call connected → mark it answered so hangup
+  // finalizes it as `completed` (not `failed`).
+  if (payload.direction === "outgoing") {
+    await markOutboundAnswered(supabase, payload.call_control_id)
+    return
+  }
+
   // Caller leg (A) was answered by us. What happens next depends on status.
   const { data: call } = await supabase
     .from("calls")
@@ -340,40 +348,17 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
     await Promise.allSettled(ringing.map((legId) => hangupLeg(legId)))
   }
 
-  const wasAnswered = call?.status === "answered" || call?.status === "completed"
   const endedAt = payload.end_time ?? new Date().toISOString()
 
-  let finalStatus: string
-  if (wasAnswered) {
-    finalStatus = "completed"
-  } else if (call?.status === "voicemail") {
-    finalStatus = "voicemail"
-  } else if (call?.direction === "inbound") {
-    finalStatus = "missed"
-  } else {
-    finalStatus = "failed"
-  }
+  const finalStatus = await finalizeCall(supabase, {
+    telnyxCallId: payload.call_control_id,
+    prevStatus: call?.status,
+    direction: call?.direction,
+    startedAt: call?.started_at,
+    endedAt,
+  })
 
-  let durationSeconds: number | null = null
-  if (wasAnswered && call?.started_at) {
-    durationSeconds = Math.round(
-      (new Date(endedAt).getTime() - new Date(call.started_at).getTime()) / 1000
-    )
-  }
-
-  await supabase
-    .from("calls")
-    .update({
-      status: finalStatus,
-      ended_at: endedAt,
-      ...(durationSeconds !== null && { duration_seconds: durationSeconds }),
-    })
-    .eq("telnyx_call_id", payload.call_control_id)
-
-  console.log(
-    `📴 Call ${payload.call_control_id} → ${finalStatus}`,
-    durationSeconds != null ? `(${durationSeconds}s)` : ""
-  )
+  console.log(`📴 Call ${payload.call_control_id} → ${finalStatus}`)
 
   if (finalStatus === "missed" && call?.id && call?.phone_number_id) {
     const { data: phoneNumber } = await supabase
