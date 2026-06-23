@@ -1,5 +1,6 @@
 import crypto from "crypto"
 import { createAdminClient } from "@/lib/admin"
+import { isStartKeyword, isStopKeyword } from "@/lib/sms-consent"
 
 // Use the default Node.js runtime so `crypto` is available for Ed25519
 // signature verification. Do NOT switch this to the edge runtime.
@@ -123,6 +124,11 @@ async function handleMessageReceived(
   console.log("📱 Inbound SMS from:", fromNumber, "→ to:", toNumber)
   console.log("💬 Message:", messageText)
 
+  // Mirror carrier STOP/START handling into our own DB for team visibility.
+  // Telnyx already enforces suppression at the network level; this keeps the
+  // dashboard in sync. We still save the message below so it shows in the thread.
+  await syncOptOutFromInbound(supabase, fromNumber, messageText)
+
   // Deduplication — Telnyx sometimes delivers the same webhook more than once.
   const { data: existing } = await supabase
     .from("messages")
@@ -201,6 +207,33 @@ async function handleMessageReceived(
 
   if (notifError) {
     console.error("⚠️ Failed to insert unread_message notification:", notifError)
+  }
+}
+
+// Records (STOP) or clears (START) a suppression row for the sender, mirroring
+// what Telnyx does automatically at the carrier level.
+async function syncOptOutFromInbound(
+  supabase: SupabaseClient,
+  fromNumber: string,
+  text: string
+) {
+  if (isStopKeyword(text)) {
+    const { error } = await supabase.from("sms_opt_outs").upsert(
+      { phone: fromNumber, source: "sms_keyword:STOP", note: null },
+      { onConflict: "phone", ignoreDuplicates: true }
+    )
+    if (error) console.error("Failed to record opt-out:", error)
+    else console.log("🚫 Opt-out recorded for:", fromNumber)
+    return
+  }
+
+  if (isStartKeyword(text)) {
+    const { error } = await supabase
+      .from("sms_opt_outs")
+      .delete()
+      .eq("phone", fromNumber)
+    if (error) console.error("Failed to clear opt-out:", error)
+    else console.log("✅ Opt-out cleared (re-subscribed) for:", fromNumber)
   }
 }
 

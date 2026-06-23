@@ -3,22 +3,35 @@
 import { useEffect, useRef, useState } from "react"
 import {
   ArrowDown,
+  BellOff,
+  BellRing,
   MessageSquare,
   MoreVertical,
   Paperclip,
   Phone,
   SendHorizonal,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { deleteMessage, resendMessage } from "@/app/dashboard/conversations/actions"
+import {
+  deleteMessage,
+  resendMessage,
+  setContactOptOut,
+} from "@/app/dashboard/conversations/actions"
 import { MessageBubble } from "./message-bubble"
 import type {
   Conversation,
@@ -92,6 +105,20 @@ export function ChatView({
     await resendMessage(message.id)
   }
 
+  async function handleSetOptOut(optedOut: boolean) {
+    if (!conversation) return
+    const res = await setContactOptOut(conversation.contact_number, optedOut)
+    if (res.ok) {
+      toast(
+        optedOut
+          ? "Contact opted out — they will no longer receive texts."
+          : "Contact re-subscribed — they can receive texts again."
+      )
+    } else {
+      toast.error(res.error ?? "Could not update opt-out status.")
+    }
+  }
+
   function submit() {
     const body = draft.trim()
     if (!body || sending) return
@@ -156,15 +183,29 @@ export function ChatView({
             </TooltipTrigger>
             <TooltipContent>Coming soon</TooltipContent>
           </Tooltip>
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled
-            aria-label="More options"
-            onClick={() => {}}
-          >
-            <MoreVertical className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="More options">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-sm text-destructive focus:text-destructive"
+                onClick={() => handleSetOptOut(true)}
+              >
+                <BellOff className="h-3.5 w-3.5" />
+                Mark as opted out
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-sm"
+                onClick={() => handleSetOptOut(false)}
+              >
+                <BellRing className="h-3.5 w-3.5" />
+                Re-subscribe to texts
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
