@@ -21,6 +21,24 @@ export function computeFinalStatus(
 }
 
 /**
+ * Decide what to do when a non-agent call leg is answered.
+ *
+ * IMPORTANT: Telnyx `call.answered` payloads do NOT include a `direction` field,
+ * so the decision must come from the stored call row — never from the webhook
+ * payload. (Keying off `payload.direction` here is the bug that left answered
+ * outbound calls stuck at `initiated` → finalized as `failed`.)
+ */
+export function answeredAction(call: {
+  direction: string | undefined
+  status: string | undefined
+}): "mark_outbound_answered" | "bridge" | "voicemail" | "noop" {
+  if (call.direction === "outbound") return "mark_outbound_answered"
+  if (call.status === "answered") return "bridge"
+  if (call.status === "voicemail") return "voicemail"
+  return "noop"
+}
+
+/**
  * Mark an outbound (softphone-originated) call as answered.
  *
  * The voice webhook records outbound calls as `initiated`; without this the call

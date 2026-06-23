@@ -18,7 +18,11 @@ import {
   getRingingAgentLegIds,
   getAnsweredAgentLegId,
 } from "@/lib/telnyx/ring-all"
-import { finalizeCall, markOutboundAnswered } from "@/lib/telnyx/call-logging"
+import {
+  finalizeCall,
+  markOutboundAnswered,
+  answeredAction,
+} from "@/lib/telnyx/call-logging"
 
 export const runtime = "nodejs"
 
@@ -255,22 +259,25 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     return
   }
 
-  // Outbound (softphone-originated) call connected → mark it answered so hangup
-  // finalizes it as `completed` (not `failed`).
-  if (payload.direction === "outgoing") {
-    await markOutboundAnswered(supabase, payload.call_control_id)
-    return
-  }
-
-  // Caller leg (A) was answered by us. What happens next depends on status.
+  // A non-agent leg was answered. call.answered payloads carry NO `direction`,
+  // so we read it (and the status) from the stored call row to decide what to do.
   const { data: call } = await supabase
     .from("calls")
-    .select("id, status, phone_numbers(voicemail_greeting)")
+    .select("id, status, direction, phone_numbers(voicemail_greeting)")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
   if (!call) return
 
-  if (call.status === "answered") {
+  const action = answeredAction(call)
+
+  // Outbound (softphone-originated) call connected → mark answered so hangup
+  // finalizes it as `completed` (not `failed`).
+  if (action === "mark_outbound_answered") {
+    await markOutboundAnswered(supabase, payload.call_control_id)
+    return
+  }
+
+  if (action === "bridge") {
     // A winner is waiting → bridge A to the answered agent leg.
     const agentLeg = await getAnsweredAgentLegId(supabase, call.id)
     if (agentLeg) {
@@ -291,7 +298,7 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
     return
   }
 
-  if (call.status === "voicemail") {
+  if (action === "voicemail") {
     await speakGreeting(payload.call_control_id, call)
   }
 }
