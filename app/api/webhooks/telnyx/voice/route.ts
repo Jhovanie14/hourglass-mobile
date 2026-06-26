@@ -152,7 +152,7 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     return
   }
 
-  await supabase.from("calls").upsert(
+  const { error: upsertError } = await supabase.from("calls").upsert(
     {
       phone_number_id: phoneNumber.id,
       contact_number: payload.from,
@@ -162,6 +162,12 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     },
     { onConflict: "telnyx_call_id", ignoreDuplicates: true }
   )
+  if (upsertError) {
+    // A swallowed error here meant the caller row was never written and the call
+    // silently died (ring → hangup, nothing logged). Surface it loudly instead.
+    console.error("⚠️ Failed to upsert inbound call row:", upsertError)
+    return
+  }
 
   const { data: call } = await supabase
     .from("calls")
