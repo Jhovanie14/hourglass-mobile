@@ -49,6 +49,11 @@ export async function dialAgentLeg(params: {
       to: `sip:${params.sipUsername}@sip.telnyx.com`,
       from: params.didNumber,
       ...(displayName ? { from_display_name: displayName } : {}),
+      // `from` must be the owned DID, so the SIP invite's caller fields carry the
+      // DID, not the customer. Telnyx does NOT surface from_display_name to the
+      // WebRTC client either, so pass the customer's number as a custom SIP header
+      // the softphone reads to show who's actually calling.
+      custom_headers: [{ name: "X-Caller-Number", value: params.callerNumber }],
       timeout_secs: 25,
       command_id: commandId(),
       client_state: encodeClientState({

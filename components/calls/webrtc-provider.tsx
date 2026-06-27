@@ -38,6 +38,20 @@ export function useWebRTC() {
   return useContext(WebRTCContext)
 }
 
+/**
+ * The customer's number for an inbound ring-all leg, carried in the
+ * X-Caller-Number custom SIP header (dialAgentLeg sets it; the leg's standard
+ * caller fields hold the owned DID, not the customer). Returns null when absent
+ * (e.g. outbound legs), so callers can fall back.
+ */
+function callerFromHeader(call: TelnyxCall | null): string | null {
+  const headers = (call?.options as any)?.customHeaders as
+    | Array<{ name?: string; value?: string }>
+    | undefined
+  const match = headers?.find((h) => h.name?.toLowerCase() === "x-caller-number")
+  return match?.value ?? null
+}
+
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 export function WebRTCProvider({ children }: { children: React.ReactNode }) {
@@ -98,8 +112,22 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
       // Inbound ringing
       if (state === "ringing" && (call as any).direction !== "outbound") {
         if (activeCallRef.current) return
-        const destination = (call.options as any)?.destinationNumber ?? ""
-        lookupInboundPhone(destination).then((phoneNumber) => {
+        // TEMP DIAGNOSTIC — remove after confirming X-Caller-Number arrives on a live call
+        console.log("🔎 inbound call.options:", {
+          remoteCallerName: (call.options as any)?.remoteCallerName,
+          remoteCallerNumber: (call.options as any)?.remoteCallerNumber,
+          destinationNumber: (call.options as any)?.destinationNumber,
+          customHeaders: (call.options as any)?.customHeaders,
+        })
+        // Ring-all dials the agent leg with `from` = the owned DID the customer
+        // dialed, so the called number arrives as remoteCallerNumber (the SIP
+        // destination is just this agent's credential). Fall back to
+        // destinationNumber for any non-ring-all leg.
+        const dialedDid =
+          (call.options as any)?.remoteCallerNumber ??
+          (call.options as any)?.destinationNumber ??
+          ""
+        lookupInboundPhone(dialedDid).then((phoneNumber) => {
           if (phoneNumber) setInboundPhoneNumber(phoneNumber)
         })
         setIncomingCall(call)
@@ -197,12 +225,14 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
     setSpeakText("")
   }
 
-  const callerNumber =
-    (incomingCall?.options as any)?.remoteCallerNumber ??
-    (incomingCall?.options as any)?.destinationNumber ??
-    "Unknown"
+  // Who is calling. Ring-all dials the agent leg `from` = the owned DID, so the
+  // SIP caller fields (remoteCallerName/Number) all carry the DID — Telnyx does
+  // not pass the customer through. The real caller rides in the X-Caller-Number
+  // custom SIP header (set in dialAgentLeg). Outbound legs have no such header.
+  const callerNumber = callerFromHeader(incomingCall) ?? "Unknown"
 
   const activeNumber =
+    callerFromHeader(activeCall) ??
     (activeCall?.options as any)?.remoteCallerNumber ??
     (activeCall?.options as any)?.destinationNumber ??
     "Unknown"
