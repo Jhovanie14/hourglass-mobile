@@ -3,6 +3,7 @@
 import { createAdminClient } from "@/lib/admin"
 import { createClient } from "@/lib/server"
 import type { Message } from "@/types/conversations"
+import { isValidE164 } from "@/lib/phone"
 
 /**
  * Returns true if the contact has opted out of texts. The suppression table is
@@ -46,6 +47,13 @@ export async function sendMessage(input: SendMessageInput): Promise<SendResult> 
   const trimmed = body.trim()
   if (!trimmed) {
     return { ok: false, error: "Message body is empty." }
+  }
+
+  if (!isValidE164(to)) {
+    return {
+      ok: false,
+      error: "Enter a valid phone number with country code (e.g. +12109348999).",
+    }
   }
 
   const supabase = await createClient()
@@ -176,6 +184,15 @@ export async function getOrCreateConversation(
     return { ok: false, error: "You must be signed in." }
   }
 
+  // Guard before writing — keeps contact_number consistently E.164 in the DB
+  // even if a caller bypasses the validated compose UI.
+  if (!isValidE164(contactNumber)) {
+    return {
+      ok: false,
+      error: "Enter a valid phone number with country code (e.g. +12109348999).",
+    }
+  }
+
   const { data: existing } = await supabase
     .from("conversations")
     .select("id")
@@ -243,6 +260,13 @@ export async function resendMessage(
     .single()
 
   if (!conv) return { ok: false, error: "Conversation not found." }
+
+  if (!isValidE164(conv.contact_number)) {
+    return {
+      ok: false,
+      error: "Stored contact number is not a valid phone number.",
+    }
+  }
 
   // Consent guard — never resend to someone who has opted out.
   if (await isOptedOut(conv.contact_number)) {

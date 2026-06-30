@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { useEffect, useState } from "react"
 import {
   Dialog,
@@ -12,11 +13,20 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import PhoneInput from "react-phone-number-input"
+import "react-phone-number-input/style.css"
+import { isValidE164 } from "@/lib/phone"
 import {
   getOrCreateConversation,
   sendMessage,
 } from "@/app/dashboard/conversations/actions"
 import type { PhoneNumber } from "@/types/conversations"
+
+const PhoneTextInput = React.forwardRef<
+  HTMLInputElement,
+  React.ComponentProps<"input">
+>((props, ref) => <Input {...props} ref={ref} />)
+PhoneTextInput.displayName = "PhoneTextInput"
 
 export function ComposeModal({
   open,
@@ -53,6 +63,9 @@ export function ComposeModal({
 
     const contact = to.trim()
     if (!contact) return setError("Enter a recipient number.")
+    if (!isValidE164(contact)) {
+      return setError("Enter a valid phone number with country code.")
+    }
     if (!inboxId) return setError("Select an inbox to send from.")
     if (!body.trim()) return setError("Enter a message.")
 
@@ -101,12 +114,16 @@ export function ComposeModal({
             >
               Recipient number
             </label>
-            <Input
+            <PhoneInput
               id="compose-to"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="+63912XXXXXXX"
-              autoComplete="off"
+              international
+              defaultCountry="US"
+              value={to || undefined}
+              onChange={(value) => setTo(value ?? "")}
+              inputComponent={PhoneTextInput}
+              inputProps={{ autoComplete: "off" }}
+              className="phone-input flex items-center gap-2"
+              placeholder="Enter phone number"
             />
           </div>
 
