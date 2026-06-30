@@ -184,6 +184,15 @@ export async function getOrCreateConversation(
     return { ok: false, error: "You must be signed in." }
   }
 
+  // Guard before writing — keeps contact_number consistently E.164 in the DB
+  // even if a caller bypasses the validated compose UI.
+  if (!isValidE164(contactNumber)) {
+    return {
+      ok: false,
+      error: "Enter a valid phone number with country code (e.g. +12109348999).",
+    }
+  }
+
   const { data: existing } = await supabase
     .from("conversations")
     .select("id")
