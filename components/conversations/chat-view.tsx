@@ -10,6 +10,7 @@ import {
   Paperclip,
   Phone,
   SendHorizonal,
+  Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Tooltip,
   TooltipContent,
@@ -50,6 +59,7 @@ export function ChatView({
   onSend,
   onDeleteMessage,
   onResendMessage,
+  onDeleteConversation,
 }: {
   conversation: Conversation | null
   phoneNumber: PhoneNumber | null
@@ -59,9 +69,11 @@ export function ChatView({
   onSend: (body: string) => void
   onDeleteMessage?: (id: string) => void
   onResendMessage?: (message: Message) => void
+  onDeleteConversation?: () => void
 }) {
   const [draft, setDraft] = useState("")
   const [showJump, setShowJump] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -204,6 +216,13 @@ export function ChatView({
                 <BellRing className="h-3.5 w-3.5" />
                 Re-subscribe to texts
               </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-sm text-destructive focus:text-destructive"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete conversation
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -326,6 +345,41 @@ export function ChatView({
           </Button>
         </div>
       </div>
+
+      {/* Delete-conversation confirmation */}
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the conversation with{" "}
+              <span className="font-medium text-foreground">
+                {conversation.contact_number}
+              </span>{" "}
+              and all its messages. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDelete(false)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmDelete(false)
+                onDeleteConversation?.()
+              }}
+              className="cursor-pointer"
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -59,7 +59,7 @@ export function ConversationList({
   }, [conversations, query, selectedInbox])
 
   return (
-    <div className="flex w-full flex-col border-r border-border bg-card sm:w-[300px] sm:shrink-0">
+    <div className="flex h-full min-h-0 w-full flex-col border-r border-border bg-card sm:w-[300px] sm:shrink-0">
       {/* Header */}
       <div className="space-y-3 border-b border-border p-3">
         <div className="flex items-center justify-between">
@@ -89,7 +89,7 @@ export function ConversationList({
       </div>
 
       {/* List */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         {loading ? (
           <div className="space-y-1 p-2">
             {Array.from({ length: 5 }).map((_, i) => (

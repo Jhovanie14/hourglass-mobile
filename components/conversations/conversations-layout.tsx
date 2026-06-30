@@ -5,7 +5,11 @@ import { useRouter, usePathname } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { createClient } from "@/lib/client"
 import { cn } from "@/lib/utils"
-import { sendMessage } from "@/app/dashboard/conversations/actions"
+import {
+  deleteConversation,
+  sendMessage,
+} from "@/app/dashboard/conversations/actions"
+import { toast } from "sonner"
 import { InboxSwitcher, ALL_INBOXES } from "./inbox-switcher"
 import { ConversationList } from "./conversation-list"
 import { ChatView } from "./chat-view"
@@ -209,6 +213,24 @@ export function ConversationsLayout({
     [selected]
   )
 
+  // ---- Delete the selected conversation ----
+  const handleDeleteConversation = useCallback(async () => {
+    if (!selected) return
+    const id = selected.id
+
+    // Optimistic: drop it from the list and clear the open thread.
+    setConversations((prev) => prev.filter((c) => c.id !== id))
+    setSelected(null)
+    setMessages([])
+
+    const res = await deleteConversation(id)
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not delete conversation.")
+      return
+    }
+    toast.success("Conversation deleted")
+  }, [selected])
+
   return (
     <div className="flex h-[calc(100svh-3.5rem)] overflow-hidden">
       {/* Column 1 — inbox switcher (hidden on mobile when a chat is open) */}
@@ -222,7 +244,7 @@ export function ConversationsLayout({
       </div>
 
       {/* Column 2 — conversation list (hidden on mobile when a chat is open) */}
-      <div className={cn("flex min-w-0 scroll-auto", selected ? "hidden sm:flex" : "flex-1 sm:flex-none")}>
+      <div className={cn("flex min-h-0 min-w-0", selected ? "hidden sm:flex" : "flex-1 sm:flex-none")}>
         <ConversationList
           conversations={conversations}
           phoneNumbers={phoneNumbers}
@@ -256,6 +278,7 @@ export function ConversationsLayout({
             onSend={handleSend}
             onDeleteMessage={(id) => setMessages((prev) => prev.filter((m) => m.id !== id))}
             onResendMessage={(msg) => setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, status: "queued" } : m))}
+            onDeleteConversation={handleDeleteConversation}
           />
         </div>
       </div>
