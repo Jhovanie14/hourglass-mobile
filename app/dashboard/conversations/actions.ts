@@ -237,6 +237,27 @@ export async function deleteMessage(
   return { ok: true }
 }
 
+/**
+ * Permanently deletes a conversation and (via the messages→conversations FK
+ * cascade) all of its messages. Opt-out suppression (sms_opt_outs, keyed by
+ * phone) is intentionally left untouched so a deleted contact stays suppressed.
+ */
+export async function deleteConversation(
+  conversationId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { data: claims } = await supabase.auth.getClaims()
+  if (!claims?.claims) return { ok: false, error: "Not signed in." }
+
+  const { error } = await supabase
+    .from("conversations")
+    .delete()
+    .eq("id", conversationId)
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 export async function resendMessage(
   messageId: string
 ): Promise<SendResult> {
