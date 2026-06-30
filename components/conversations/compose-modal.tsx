@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { useEffect, useState } from "react"
 import {
   Dialog,
@@ -12,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import * as React from "react"
 import PhoneInput from "react-phone-number-input"
 import "react-phone-number-input/style.css"
 import { isValidE164 } from "@/lib/phone"
@@ -121,6 +121,7 @@ export function ComposeModal({
               value={to || undefined}
               onChange={(value) => setTo(value ?? "")}
               inputComponent={PhoneTextInput}
+              inputProps={{ autoComplete: "off" }}
               className="phone-input flex items-center gap-2"
               placeholder="Enter phone number"
             />
