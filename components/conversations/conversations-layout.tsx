@@ -222,7 +222,7 @@ export function ConversationsLayout({
       </div>
 
       {/* Column 2 — conversation list (hidden on mobile when a chat is open) */}
-      <div className={cn("flex min-w-0", selected ? "hidden sm:flex" : "flex-1 sm:flex-none")}>
+      <div className={cn("flex min-w-0 scroll-auto", selected ? "hidden sm:flex" : "flex-1 sm:flex-none")}>
         <ConversationList
           conversations={conversations}
           phoneNumbers={phoneNumbers}
