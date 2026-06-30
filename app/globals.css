@@ -137,10 +137,10 @@
 }
 .phone-input .PhoneInputCountrySelect {
   color: var(--foreground);
-  background: transparent;
+  background: var(--background);
 }
 .phone-input .PhoneInputCountrySelectArrow {
-  color: var(--muted-foreground);
+  color: var(--foreground);
   opacity: 0.7;
 }
 .phone-input .PhoneInputInput {
