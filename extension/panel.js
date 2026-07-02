@@ -1,28 +1,18 @@
+// Shell around the remote panel UI: relays its PanelCommands to the
+// background phone, and forwards PanelEvents (state-sync etc.) into it.
 const PANEL_ORIGIN = "https://www.megestic.com"
+const iframe = document.querySelector("iframe")
 
-function setActiveBadge() {
-  chrome.action.setBadgeText({ text: "●" })
-  chrome.action.setBadgeBackgroundColor({ color: "#22c55e" })
-}
-
+// Commands out of the panel UI → broadcast (offscreen shell injects them).
 window.addEventListener("message", (event) => {
   if (event.origin !== PANEL_ORIGIN) return
   const msg = event.data
-  if (!msg || msg.source !== "hourglass-panel") return
+  if (!msg || msg.source !== "hourglass-panel" || msg.type !== "cmd") return
+  chrome.runtime.sendMessage({ kind: "panel-command", payload: msg }).catch(() => {})
+})
 
-  if (msg.type === "incoming") {
-    chrome.notifications.create("hourglass-incoming", {
-      type: "basic",
-      iconUrl: "icon128.png",
-      title: "Incoming call",
-      message: msg.label ? `${msg.caller} → ${msg.label}` : String(msg.caller),
-      priority: 2,
-    })
-    setActiveBadge()
-  } else if (msg.type === "call-active") {
-    setActiveBadge()
-  } else if (msg.type === "call-ended") {
-    chrome.action.setBadgeText({ text: "" })
-    chrome.notifications.clear("hourglass-incoming")
-  }
+// Events from the background phone → into the panel UI iframe.
+chrome.runtime.onMessage.addListener((message) => {
+  if (!message || message.kind !== "panel-event") return
+  iframe.contentWindow.postMessage(message.payload, PANEL_ORIGIN)
 })
