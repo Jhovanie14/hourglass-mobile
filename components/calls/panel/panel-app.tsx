@@ -4,12 +4,24 @@ import { useEffect, useState } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { createClient } from "@/lib/client"
 import { WebRTCProvider } from "@/components/calls/webrtc-provider"
+import { PANEL_SOURCE } from "@/lib/panel-bus"
 import type { PhoneNumber } from "@/types/calls"
 import { PanelLogin } from "./panel-login"
 import { PanelDialer } from "./panel-dialer"
+import { BackgroundPhone } from "./background-phone"
+import { RemotePhone } from "./remote-phone"
+
+type PanelMode = "local" | "background" | "remote"
+
+function getMode(): PanelMode {
+  if (typeof window === "undefined") return "local"
+  const m = new URLSearchParams(window.location.search).get("mode")
+  return m === "background" || m === "remote" ? m : "local"
+}
 
 export function PanelApp() {
   const [supabase] = useState(() => createClient())
+  const [mode] = useState<PanelMode>(getMode)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([])
@@ -42,12 +54,34 @@ export function PanelApp() {
       .catch((err) => console.error("Failed to load phone numbers:", err))
   }, [accessToken])
 
+  // Background mode with no session: tell the extension loudly, render nothing.
+  useEffect(() => {
+    if (mode !== "background" || loading) return
+    if (!session) {
+      window.parent.postMessage({ source: PANEL_SOURCE, type: "auth-required" }, "*")
+    }
+  }, [mode, loading, session])
+
   if (loading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading…</div>
   }
 
+  if (mode === "background") {
+    if (!session) return null
+    return <BackgroundPhone phoneNumbers={phoneNumbers} />
+  }
+
   if (!session) {
     return <PanelLogin supabase={supabase} />
+  }
+
+  if (mode === "remote") {
+    return (
+      <RemotePhone
+        phoneNumbers={phoneNumbers}
+        onSignOut={() => supabase.auth.signOut()}
+      />
+    )
   }
 
   return (
