@@ -4,8 +4,16 @@ import { ArrowDownLeft, ArrowUpRight, Phone } from "lucide-react"
 import type { SerializedCallState } from "@/lib/panel-bus"
 import type { PhoneNumber } from "@/types/calls"
 import { send } from "../panel-send"
-import { formatRecentRow } from "../recent-row"
+import { formatRecentRow, type StatusTone } from "../recent-row"
 import { useRecentCalls } from "../use-recent-calls"
+
+const TONE_CLASS: Record<StatusTone, string> = {
+  good: "bg-green-500/10 text-green-400",
+  bad: "bg-red-500/10 text-red-400",
+  warn: "bg-amber-500/10 text-amber-400",
+  info: "bg-sky-500/10 text-sky-400",
+  neutral: "bg-neutral-800 text-neutral-400",
+}
 
 export function RecentTab({
   accessToken,
@@ -84,6 +92,11 @@ export function RecentTab({
                 </span>
               </span>
             </button>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${TONE_CLASS[row.statusTone]}`}
+            >
+              {row.statusLabel}
+            </span>
             <button
               type="button"
               aria-label={`Call ${row.title}`}

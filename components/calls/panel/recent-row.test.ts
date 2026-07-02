@@ -36,6 +36,24 @@ describe("formatRecentRow", () => {
     const row = formatRecentRow({ ...base, phone_numbers: null })
     expect(row.lineLabel).toBeNull()
   })
+  it("labels and colour-codes each status", () => {
+    const tone = (status: RecentCall["status"]) =>
+      formatRecentRow({ ...base, status })
+    expect(tone("completed").statusLabel).toBe("Completed")
+    expect(tone("completed").statusTone).toBe("good")
+    expect(tone("answered").statusTone).toBe("good")
+    expect(tone("missed").statusTone).toBe("bad")
+    expect(tone("failed").statusTone).toBe("bad")
+    expect(tone("declined").statusTone).toBe("warn")
+    expect(tone("voicemail").statusLabel).toBe("Voicemail")
+    expect(tone("voicemail").statusTone).toBe("info")
+    expect(tone("initiated").statusTone).toBe("neutral")
+  })
+  it("falls back to a neutral pill for unknown statuses", () => {
+    const row = formatRecentRow({ ...base, status: "ringing" as RecentCall["status"] })
+    expect(row.statusLabel).toBe("Ringing")
+    expect(row.statusTone).toBe("neutral")
+  })
   it("shows a placeholder title when the number is empty", () => {
     const row = formatRecentRow({ ...base, contact_number: "" })
     expect(row.title).toBe("Unknown")
