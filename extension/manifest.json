@@ -19,7 +19,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["call-widget.html"],
+      "resources": ["call-widget.html", "setup.html"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ],

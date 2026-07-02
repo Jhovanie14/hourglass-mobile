@@ -2,6 +2,7 @@
 // notifications/badge, and issues Answer/Decline commands from notification
 // buttons (button clicks are user gestures, so sidePanel.open is allowed).
 import { canInjectWidget, shouldShowWidget } from "./lib/widget-policy.js"
+import { needsSetup } from "./lib/setup-policy.js"
 
 const INCOMING_ID = "hourglass-incoming"
 const AUTH_ID = "hourglass-auth"
@@ -25,11 +26,16 @@ async function ensureOffscreen() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   ensureOffscreen()
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch(() => {})
+  // First install (no persisted grant) → walk the agent through the setup tab,
+  // the only surface where the mic prompt can show.
+  if (needsSetup({ signedIn: false, micGranted: await isSetupComplete() })) {
+    openSetup()
+  }
 })
 chrome.runtime.onStartup.addListener(ensureOffscreen)
 
@@ -40,6 +46,17 @@ async function openSidePanel() {
   } catch (e) {
     console.warn("sidePanel.open failed:", e)
   }
+}
+
+async function openSetup() {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") })
+}
+
+async function isSetupComplete() {
+  const { "hg-setup-complete": done } = await chrome.storage.local.get(
+    "hg-setup-complete"
+  )
+  return Boolean(done)
 }
 
 // Push the widget's show/hide state to the active tab (if it can host it).
@@ -130,6 +147,16 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 })
 
 chrome.tabs.onActivated.addListener(() => updateActiveTabWidget())
+
+// Setup finished in the setup tab → recreate the offscreen engine so it re-reads
+// the fresh session + mic grant cleanly.
+chrome.runtime.onMessage.addListener(async (message) => {
+  if (!message || message.kind !== "setup-complete") return
+  try {
+    if (await chrome.offscreen.hasDocument()) await chrome.offscreen.closeDocument()
+  } catch {}
+  ensureOffscreen()
+})
 
 chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
   if (id !== INCOMING_ID) return
