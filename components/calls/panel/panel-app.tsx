@@ -85,6 +85,7 @@ export function PanelApp() {
     return (
       <RemotePhone
         phoneNumbers={phoneNumbers}
+        accessToken={accessToken}
         onSignOut={() => supabase.auth.signOut()}
       />
     )
