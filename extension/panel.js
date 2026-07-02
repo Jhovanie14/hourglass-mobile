@@ -1,7 +1,9 @@
 // Shell around the remote panel UI: relays its PanelCommands to the
 // background phone, and forwards PanelEvents (state-sync etc.) into it.
-const PANEL_ORIGIN = "https://www.megestic.com"
 const iframe = document.querySelector("iframe")
+// Match whatever origin the iframe actually loads (localhost in dev, megestic in
+// prod). Hardcoding it breaks the message bridge whenever the two drift apart.
+const PANEL_ORIGIN = new URL(iframe.src).origin
 
 // Commands out of the panel UI → broadcast (offscreen shell injects them).
 window.addEventListener("message", (event) => {

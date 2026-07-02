@@ -1114,3 +1114,20 @@ git commit -m "feat(ext): retire side panel; popup + widget become the surfaces"
 **Type consistency:** `canInjectWidget`/`shouldShowWidget`/`needsSetup` signatures match across Tasks 1, 2, 6, 7. Message kinds (`panel-command`, `panel-event`, `widget-visibility`, `widget-hello`, `setup-complete`) are used consistently. `SerializedCallState.status` values match `shouldShowWidget`'s live set (`incoming`/`ringing`/`trying`/`active`) and the bridge's `CallStatus`.
 
 **Known follow-ups (out of scope, noted for planning):** widget `content_scripts.matches` is broad (`http/https *`) per the "any tab" requirement — revisit if the client wants to scope to specific CRM domains; a "Finish setup" button in the popup for the re-grant path could replace the auto-open-on-install heuristic.
+
+---
+
+## Prod build — dev→prod origin swap checklist
+
+Before loading this extension against production (`https://www.megestic.com`),
+change every dev origin to the prod origin. Committed code uses `localhost:3000`
+for local development.
+
+- `extension/popup.html` — iframe `src` → `https://www.megestic.com/panel?mode=remote`
+- `extension/call-widget.html` — iframe `src` → `https://www.megestic.com/panel?mode=widget`
+- `extension/setup.html` — iframe `src` → `https://www.megestic.com/panel?mode=remote`
+- `extension/manifest.json`:
+  - `host_permissions` — keep only `https://www.megestic.com/*` (drop the localhost entry)
+  - `content_scripts.matches` and `web_accessible_resources.matches` — already `http://*/*`, `https://*/*`; no change (the widget injects on any page the agent visits)
+- The bridge shells (`popup.js`, `call-widget.js`, `setup.js`, `offscreen.js`, `panel.js`) derive `PANEL_ORIGIN` from `iframe.src` — no edits needed once the HTML `src` values are prod.
+- Confirm the localStorage-backed panel Supabase client fix (`lib/client.ts`, the `/panel` branch using `storageKey: "hg-panel-auth"`) is deployed on `www.megestic.com`. Without it, the popup/widget/setup iframes lose their session on reopen.

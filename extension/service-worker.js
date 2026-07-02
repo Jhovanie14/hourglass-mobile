@@ -1,6 +1,7 @@
 // Coordinator: keeps the offscreen phone alive, turns PanelEvents into
-// notifications/badge, and issues Answer/Decline commands from notification
-// buttons (button clicks are user gestures, so sidePanel.open is allowed).
+// notifications/badge, drives the per-tab call widget, and issues Answer/Decline
+// from notification buttons (button clicks are user gestures, so opening the
+// popup is allowed).
 import { canInjectWidget, shouldShowWidget } from "./lib/widget-policy.js"
 import { needsSetup } from "./lib/setup-policy.js"
 
@@ -28,9 +29,6 @@ async function ensureOffscreen() {
 
 chrome.runtime.onInstalled.addListener(async () => {
   ensureOffscreen()
-  chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch(() => {})
   // First install (no persisted grant) → walk the agent through the setup tab,
   // the only surface where the mic prompt can show.
   if (needsSetup({ signedIn: false, micGranted: await isSetupComplete() })) {
@@ -40,11 +38,11 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(ensureOffscreen)
 
 async function openSidePanel() {
-  const win = await chrome.windows.getLastFocused()
+  // Notifications/answer actions are user gestures, so we can open the popup.
   try {
-    await chrome.sidePanel.open({ windowId: win.id })
+    await chrome.action.openPopup()
   } catch (e) {
-    console.warn("sidePanel.open failed:", e)
+    console.warn("openPopup failed:", e)
   }
 }
 
