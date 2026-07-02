@@ -50,6 +50,9 @@ export function RecentTab({
     <ul className="divide-y divide-neutral-900">
       {calls.map((call) => {
         const row = formatRecentRow(call)
+        // Prefer the line the call came in on (multi-brand callback); fall back
+        // to the default line for legacy rows without the join.
+        const callerId = row.callbackFrom ?? defaultCallerId
         return (
           <li
             key={call.id}
@@ -84,10 +87,10 @@ export function RecentTab({
             <button
               type="button"
               aria-label={`Call ${row.title}`}
-              disabled={!canDial || !defaultCallerId || !row.callbackTo}
+              disabled={!canDial || !callerId || !row.callbackTo}
               onClick={() =>
-                defaultCallerId &&
-                send({ cmd: "dial", to: row.callbackTo, callerId: defaultCallerId })
+                callerId &&
+                send({ cmd: "dial", to: row.callbackTo, callerId })
               }
               className="rounded-full bg-green-500 p-2 text-white transition hover:bg-green-600 disabled:opacity-40"
             >

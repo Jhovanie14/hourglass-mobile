@@ -19,6 +19,10 @@ describe("formatRecentRow", () => {
     expect(row.callbackTo).toBe("+15551230000")
     expect(row.lineLabel).toBe("Sales")
   })
+  it("exposes the original line as callbackFrom, null when the join is missing", () => {
+    expect(formatRecentRow(base).callbackFrom).toBe("+15559999999")
+    expect(formatRecentRow({ ...base, phone_numbers: null }).callbackFrom).toBeNull()
+  })
   it("marks outbound direction and non-missed", () => {
     const row = formatRecentRow({ ...base, direction: "outbound", status: "completed" })
     expect(row.directionIcon).toBe("out")

@@ -18,6 +18,8 @@ export type RecentRowView = {
   lineLabel: string | null
   timeText: string
   callbackTo: string
+  /** The line this call used — call back from it so multi-brand callers see the number they dialed. Null for legacy rows missing the join. */
+  callbackFrom: string | null
 }
 
 /** Shape one call row for the Recent tab. Pure + defensive against legacy rows. */
@@ -37,5 +39,6 @@ export function formatRecentRow(call: RecentCall): RecentRowView {
     lineLabel: call.phone_numbers?.label ?? null,
     timeText,
     callbackTo: call.contact_number,
+    callbackFrom: call.phone_numbers?.phone_number ?? null,
   }
 }
