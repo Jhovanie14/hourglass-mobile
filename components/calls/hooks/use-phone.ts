@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import type { RefObject } from "react"
 import type { Call as TelnyxCall } from "@telnyx/webrtc"
 import { useRingtone } from "./use-ringtone"
 import { useDuration } from "./use-duration"

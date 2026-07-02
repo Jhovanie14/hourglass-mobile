@@ -60,6 +60,7 @@ export type PanelCommand =
   | { source: typeof PANEL_SOURCE; type: "cmd"; cmd: "dtmf"; digit: string }
   | { source: typeof PANEL_SOURCE; type: "cmd"; cmd: "speak"; text: string }
   | { source: typeof PANEL_SOURCE; type: "cmd"; cmd: "set-online"; online: boolean }
+  | { source: typeof PANEL_SOURCE; type: "cmd"; cmd: "request-state" }
 
 const EVENT_TYPES = new Set([
   "state-sync",
@@ -80,6 +81,7 @@ const COMMANDS = new Set([
   "dtmf",
   "speak",
   "set-online",
+  "request-state",
 ])
 
 function hasSource(msg: unknown): msg is { source: string; type: string } {

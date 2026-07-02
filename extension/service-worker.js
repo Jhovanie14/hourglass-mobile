@@ -98,6 +98,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
 chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
   if (id !== INCOMING_ID) return
+  ensureOffscreen()
   if (buttonIndex === 0) {
     sendCommand({ cmd: "answer" })
     openSidePanel()

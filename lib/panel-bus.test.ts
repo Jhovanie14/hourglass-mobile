@@ -41,6 +41,7 @@ describe("isPanelCommand", () => {
       { source: PANEL_SOURCE, type: "cmd", cmd: "dtmf", digit: "5" },
       { source: PANEL_SOURCE, type: "cmd", cmd: "speak", text: "hello" },
       { source: PANEL_SOURCE, type: "cmd", cmd: "set-online", online: false },
+      { source: PANEL_SOURCE, type: "cmd", cmd: "request-state" },
     ]) {
       expect(isPanelCommand(c)).toBe(true)
     }

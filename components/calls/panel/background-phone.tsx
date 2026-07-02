@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   IDLE_STATE,
   isPanelCommand,
@@ -26,18 +26,25 @@ function post(event: PanelEvent) {
 export function BackgroundPhone({ phoneNumbers }: { phoneNumbers: PhoneNumber[] }) {
   const phone = usePhone()
   const { start: startRingback, stop: stopRingback } = useRingtone("ringback")
-  const micBlockedRef = useRef(false)
+  const [micBlocked, setMicBlocked] = useState(false)
 
-  // ── Mic gate: probe once on mount ─────────────────────────────────────────
-  useEffect(() => {
+  // ── Mic gate: probe on mount, and again on request-state ──────────────────
+  const probeMic = useCallback(() => {
     navigator.mediaDevices
       .getUserMedia({ audio: true })
-      .then((stream) => stream.getTracks().forEach((t) => t.stop()))
+      .then((stream) => {
+        stream.getTracks().forEach((t) => t.stop())
+        setMicBlocked(false)
+      })
       .catch(() => {
-        micBlockedRef.current = true
+        setMicBlocked(true)
         post({ source: PANEL_SOURCE, type: "mic-blocked" })
       })
   }, [])
+
+  useEffect(() => {
+    probeMic()
+  }, [probeMic])
 
   // ── Outbound ringback while dialing ───────────────────────────────────────
   const dialing =
@@ -75,8 +82,10 @@ export function BackgroundPhone({ phoneNumbers }: { phoneNumbers: PhoneNumber[] 
     isReady: phone.isReady,
     online: phone.online,
     signedIn: true,
-    micBlocked: micBlockedRef.current,
+    micBlocked,
   }
+  const stateRef = useRef(state)
+  stateRef.current = state
   const stateJson = JSON.stringify(state)
   useEffect(() => {
     post({ source: PANEL_SOURCE, type: "state-sync", state: JSON.parse(stateJson) })
@@ -113,11 +122,15 @@ export function BackgroundPhone({ phoneNumbers }: { phoneNumbers: PhoneNumber[] 
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
+      // Trust boundary: commands/events only ever arrive from the extension
+      // shells (frame-ancestors pins who can embed us; shape guards below).
+      if (event.origin && !event.origin.startsWith("chrome-extension://")) return
       const msg = event.data
       if (!isPanelCommand(msg)) return
       const p = phoneRef.current
       switch (msg.cmd) {
         case "dial": {
+          if (p.activeCall || p.incomingCall) break
           const pn = phoneNumbersRef.current.find(
             (n) => n.phone_number === msg.callerId
           )
@@ -151,11 +164,15 @@ export function BackgroundPhone({ phoneNumbers }: { phoneNumbers: PhoneNumber[] 
         case "set-online":
           p.setOnline(msg.online)
           break
+        case "request-state":
+          probeMic()
+          post({ source: PANEL_SOURCE, type: "state-sync", state: stateRef.current })
+          break
       }
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
-  }, [])
+  }, [probeMic])
 
   return (
     <>

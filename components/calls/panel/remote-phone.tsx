@@ -60,11 +60,15 @@ export function RemotePhone({
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
+      // Trust boundary: commands/events only ever arrive from the extension
+      // shells (frame-ancestors pins who can embed us; shape guards below).
+      if (event.origin && !event.origin.startsWith("chrome-extension://")) return
       const msg = event.data
       if (!isPanelEvent(msg)) return
       if (msg.type === "state-sync") setState(msg.state)
     }
     window.addEventListener("message", onMessage)
+    send({ cmd: "request-state" })
     return () => window.removeEventListener("message", onMessage)
   }, [])
 
@@ -74,13 +78,13 @@ export function RemotePhone({
 
   const selectedId = phoneNumberId || phoneNumbers[0]?.id || ""
   const selectedPhone = phoneNumbers.find((p) => p.id === selectedId)
+  const inCall = state.status !== "idle" && state.status !== "incoming"
 
   function handleCall() {
+    if (!state.isReady || inCall) return
     if (!to.trim() || !selectedPhone) return
     send({ cmd: "dial", to: to.trim(), callerId: selectedPhone.phone_number })
   }
-
-  const inCall = state.status !== "idle" && state.status !== "incoming"
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -90,7 +94,16 @@ export function RemotePhone({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={onSignOut}
+          onClick={() => {
+            if (
+              state.status !== "idle" &&
+              !window.confirm(
+                "A call is in progress — signing out will end it. Continue?"
+              )
+            )
+              return
+            onSignOut()
+          }}
           aria-label="Sign out"
         >
           <LogOut className="h-4 w-4" />
