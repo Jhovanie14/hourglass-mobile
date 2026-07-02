@@ -1,9 +1,14 @@
 // Coordinator: keeps the offscreen phone alive, turns PanelEvents into
 // notifications/badge, and issues Answer/Decline commands from notification
 // buttons (button clicks are user gestures, so sidePanel.open is allowed).
+import { canInjectWidget, shouldShowWidget } from "./lib/widget-policy.js"
+
 const INCOMING_ID = "hourglass-incoming"
 const AUTH_ID = "hourglass-auth"
 const MIC_ID = "hourglass-mic"
+
+// Latest serialized call status from the offscreen engine; drives the widget.
+let lastStatus = "idle"
 
 async function ensureOffscreen() {
   try {
@@ -35,6 +40,16 @@ async function openSidePanel() {
   } catch (e) {
     console.warn("sidePanel.open failed:", e)
   }
+}
+
+// Push the widget's show/hide state to the active tab (if it can host it).
+async function updateActiveTabWidget() {
+  const show = shouldShowWidget(lastStatus)
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab || !tab.id || !canInjectWidget(tab.url || "")) return
+  chrome.tabs
+    .sendMessage(tab.id, { kind: "widget-visibility", show })
+    .catch(() => {})
 }
 
 function sendCommand(cmd) {
@@ -89,12 +104,32 @@ chrome.runtime.onMessage.addListener((message) => {
       priority: 2,
     })
   } else if (evt.type === "state-sync") {
-    if (evt.state && evt.state.signedIn) {
-      chrome.notifications.clear(AUTH_ID)
-      if (evt.state.status === "idle") chrome.action.setBadgeText({ text: "" })
+    if (evt.state) {
+      lastStatus = evt.state.status
+      updateActiveTabWidget()
+      if (evt.state.signedIn) {
+        chrome.notifications.clear(AUTH_ID)
+        if (evt.state.status === "idle") chrome.action.setBadgeText({ text: "" })
+      }
     }
   }
 })
+
+// A freshly-injected/focused content script says hello → tell it whether a call
+// is live so the widget follows the agent across tabs mid-call.
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || message.kind !== "widget-hello") return
+  if (!sender.tab || !sender.tab.id) return
+  if (!canInjectWidget(sender.tab.url || "")) return
+  chrome.tabs
+    .sendMessage(sender.tab.id, {
+      kind: "widget-visibility",
+      show: shouldShowWidget(lastStatus),
+    })
+    .catch(() => {})
+})
+
+chrome.tabs.onActivated.addListener(() => updateActiveTabWidget())
 
 chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
   if (id !== INCOMING_ID) return
