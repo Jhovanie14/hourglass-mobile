@@ -4,7 +4,12 @@ import path from "path"
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "extension/**/*.test.ts", "components/**/*.test.ts"],
+    include: [
+      "lib/**/*.test.ts",
+      "extension/**/*.test.ts",
+      "components/**/*.test.ts",
+      "app/**/*.test.ts",
+    ],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, ".") },

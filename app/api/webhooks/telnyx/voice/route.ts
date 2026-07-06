@@ -1,4 +1,6 @@
 import { createAdminClient } from "@/lib/admin"
+import { enqueueJadesDelivery } from "@/lib/jades/notify"
+import type { Notification } from "@/types/notifications"
 import { verifyTelnyxWebhook } from "@/lib/telnyx/webhook"
 import { decodeClientState } from "@/lib/telnyx/client-state"
 import {
@@ -380,18 +382,24 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
       .eq("id", call.phone_number_id)
       .maybeSingle()
 
-    const { error } = await supabase.from("notifications").insert({
-      type: "missed_call",
-      reference_id: call.id,
-      metadata: {
-        contact_number: payload.from,
-        phone_label: phoneNumber?.label ?? "Unknown",
-        phone_color: phoneNumber?.color ?? "#6b7280",
-      },
-    })
+    const { data: missedNotif, error } = await supabase
+      .from("notifications")
+      .insert({
+        type: "missed_call",
+        reference_id: call.id,
+        metadata: {
+          contact_number: payload.from,
+          phone_label: phoneNumber?.label ?? "Unknown",
+          phone_color: phoneNumber?.color ?? "#6b7280",
+        },
+      })
+      .select("id, type, reference_id, metadata, is_read, created_at")
+      .single()
 
     if (error) {
       console.error("⚠️ Failed to insert missed_call notification:", error)
+    } else if (missedNotif) {
+      enqueueJadesDelivery(supabase, missedNotif as Notification)
     }
   }
 }
@@ -491,18 +499,24 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
 
   const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
 
-  const { error: notifError } = await supabase.from("notifications").insert({
-    type: "voicemail",
-    reference_id: call.id,
-    metadata: {
-      contact_number: call.contact_number,
-      phone_label: (pn as { label: string } | null)?.label ?? "Unknown",
-      duration_seconds: Math.round(durationMs / 1000),
-    },
-  })
+  const { data: vmNotif, error: notifError } = await supabase
+    .from("notifications")
+    .insert({
+      type: "voicemail",
+      reference_id: call.id,
+      metadata: {
+        contact_number: call.contact_number,
+        phone_label: (pn as { label: string } | null)?.label ?? "Unknown",
+        duration_seconds: Math.round(durationMs / 1000),
+      },
+    })
+    .select("id, type, reference_id, metadata, is_read, created_at")
+    .single()
 
   if (notifError) {
     console.error("⚠️ Failed to insert voicemail notification:", notifError)
+  } else if (vmNotif) {
+    enqueueJadesDelivery(supabase, vmNotif as Notification)
   }
 
   console.log(

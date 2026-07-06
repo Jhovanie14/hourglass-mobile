@@ -1,6 +1,8 @@
 import crypto from "crypto"
 import { createAdminClient } from "@/lib/admin"
+import { enqueueJadesDelivery } from "@/lib/jades/notify"
 import { isStartKeyword, isStopKeyword } from "@/lib/sms-consent"
+import type { Notification } from "@/types/notifications"
 
 // Use the default Node.js runtime so `crypto` is available for Ed25519
 // signature verification. Do NOT switch this to the edge runtime.
@@ -195,18 +197,24 @@ async function handleMessageReceived(
 
   console.log("✅ Message saved to Supabase, conversation:", conversation.id)
 
-  const { error: notifError } = await supabase.from("notifications").insert({
-    type: "unread_message",
-    reference_id: conversation.id,
-    metadata: {
-      contact_number: fromNumber,
-      phone_label: phoneNumber.label,
-      last_message: messageText?.slice(0, 60) ?? "[Media]",
-    },
-  })
+  const { data: notif, error: notifError } = await supabase
+    .from("notifications")
+    .insert({
+      type: "unread_message",
+      reference_id: conversation.id,
+      metadata: {
+        contact_number: fromNumber,
+        phone_label: phoneNumber.label,
+        last_message: messageText?.slice(0, 60) ?? "[Media]",
+      },
+    })
+    .select("id, type, reference_id, metadata, is_read, created_at")
+    .single()
 
   if (notifError) {
     console.error("⚠️ Failed to insert unread_message notification:", notifError)
+  } else if (notif) {
+    enqueueJadesDelivery(supabase, notif as Notification)
   }
 }
 
