@@ -1,9 +1,16 @@
 // Coordinator: keeps the offscreen phone alive, turns PanelEvents into
-// notifications/badge, and issues Answer/Decline commands from notification
-// buttons (button clicks are user gestures, so sidePanel.open is allowed).
+// notifications/badge, drives the per-tab call widget, and issues Answer/Decline
+// from notification buttons (button clicks are user gestures, so opening the
+// popup is allowed).
+import { canInjectWidget, shouldShowWidget } from "./lib/widget-policy.js"
+import { needsSetup } from "./lib/setup-policy.js"
+
 const INCOMING_ID = "hourglass-incoming"
 const AUTH_ID = "hourglass-auth"
 const MIC_ID = "hourglass-mic"
+
+// Latest serialized call status from the offscreen engine; drives the widget.
+let lastStatus = "idle"
 
 async function ensureOffscreen() {
   try {
@@ -20,21 +27,44 @@ async function ensureOffscreen() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   ensureOffscreen()
-  chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch(() => {})
+  // First install (no persisted grant) → walk the agent through the setup tab,
+  // the only surface where the mic prompt can show.
+  if (needsSetup({ signedIn: false, micGranted: await isSetupComplete() })) {
+    openSetup()
+  }
 })
 chrome.runtime.onStartup.addListener(ensureOffscreen)
 
 async function openSidePanel() {
-  const win = await chrome.windows.getLastFocused()
+  // Notifications/answer actions are user gestures, so we can open the popup.
   try {
-    await chrome.sidePanel.open({ windowId: win.id })
+    await chrome.action.openPopup()
   } catch (e) {
-    console.warn("sidePanel.open failed:", e)
+    console.warn("openPopup failed:", e)
   }
+}
+
+async function openSetup() {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") })
+}
+
+async function isSetupComplete() {
+  const { "hg-setup-complete": done } = await chrome.storage.local.get(
+    "hg-setup-complete"
+  )
+  return Boolean(done)
+}
+
+// Push the widget's show/hide state to the active tab (if it can host it).
+async function updateActiveTabWidget() {
+  const show = shouldShowWidget(lastStatus)
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab || !tab.id || !canInjectWidget(tab.url || "")) return
+  chrome.tabs
+    .sendMessage(tab.id, { kind: "widget-visibility", show })
+    .catch(() => {})
 }
 
 function sendCommand(cmd) {
@@ -89,11 +119,41 @@ chrome.runtime.onMessage.addListener((message) => {
       priority: 2,
     })
   } else if (evt.type === "state-sync") {
-    if (evt.state && evt.state.signedIn) {
-      chrome.notifications.clear(AUTH_ID)
-      if (evt.state.status === "idle") chrome.action.setBadgeText({ text: "" })
+    if (evt.state) {
+      lastStatus = evt.state.status
+      updateActiveTabWidget()
+      if (evt.state.signedIn) {
+        chrome.notifications.clear(AUTH_ID)
+        if (evt.state.status === "idle") chrome.action.setBadgeText({ text: "" })
+      }
     }
   }
+})
+
+// A freshly-injected/focused content script says hello → tell it whether a call
+// is live so the widget follows the agent across tabs mid-call.
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || message.kind !== "widget-hello") return
+  if (!sender.tab || !sender.tab.id) return
+  if (!canInjectWidget(sender.tab.url || "")) return
+  chrome.tabs
+    .sendMessage(sender.tab.id, {
+      kind: "widget-visibility",
+      show: shouldShowWidget(lastStatus),
+    })
+    .catch(() => {})
+})
+
+chrome.tabs.onActivated.addListener(() => updateActiveTabWidget())
+
+// Setup finished in the setup tab → recreate the offscreen engine so it re-reads
+// the fresh session + mic grant cleanly.
+chrome.runtime.onMessage.addListener(async (message) => {
+  if (!message || message.kind !== "setup-complete") return
+  try {
+    if (await chrome.offscreen.hasDocument()) await chrome.offscreen.closeDocument()
+  } catch {}
+  ensureOffscreen()
 })
 
 chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {

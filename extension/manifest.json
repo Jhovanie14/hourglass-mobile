@@ -1,16 +1,30 @@
 {
   "manifest_version": 3,
   "name": "Hourglass Call Panel",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Always-available call panel for Hourglass agents.",
-  "minimum_chrome_version": "114",
+  "minimum_chrome_version": "127",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv1xeGU9N6WjbmWSLUZtQvs992vh/8VL08DeWbCkyTJA1gYRgjr1pcWWxrdrGlzkSBlq6VSpjhsbT+mv1mhs8wIvZUxukSrSqTDCZhnpF43KjQs5IuXtyJVndTrN4Z/L0JunDmy1u8zUgUXS64HZAVk4t7xRKy8W4u1nZNNbqRINbI6H1j9dEkk1eJBD7DuoK7YjeGkJAoed4h6e5wNrXJC/8XIf4BvxSpwfjloPuIGpooxmXYAXIVm82gs6BHeDopAPdILCvDmnqUf/FBoKejtj86Y2/EZyzJ+2r+1hFuiHFTOkN0Q5efe7FOoOQ/GTt55rCYFhmG+iUeAb9Q/tTQwIDAQAB",
-  "permissions": ["sidePanel", "notifications", "offscreen"],
-  "host_permissions": ["https://www.megestic.com/*"],
-  "background": { "service_worker": "service-worker.js" },
-  "side_panel": { "default_path": "side-panel.html" },
+  "permissions": ["notifications", "offscreen", "storage", "tabs", "scripting"],
+  "host_permissions": ["http://localhost:3000/*", "https://www.megestic.com/*"],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-widget.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["call-widget.html", "setup.html"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "action": {
     "default_title": "Open Hourglass Call Panel",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icon16.png",
       "48": "icon48.png",

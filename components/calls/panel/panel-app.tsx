@@ -10,13 +10,14 @@ import { PanelLogin } from "./panel-login"
 import { PanelDialer } from "./panel-dialer"
 import { BackgroundPhone } from "./background-phone"
 import { RemotePhone } from "./remote-phone"
+import { WidgetPhone } from "./widget-phone"
 
-type PanelMode = "local" | "background" | "remote"
+type PanelMode = "local" | "background" | "remote" | "widget"
 
 function getMode(): PanelMode {
   if (typeof window === "undefined") return "local"
   const m = new URLSearchParams(window.location.search).get("mode")
-  return m === "background" || m === "remote" ? m : "local"
+  return m === "background" || m === "remote" || m === "widget" ? m : "local"
 }
 
 export function PanelApp() {
@@ -71,6 +72,11 @@ export function PanelApp() {
     return <BackgroundPhone phoneNumbers={phoneNumbers} />
   }
 
+  if (mode === "widget") {
+    if (!session) return null
+    return <WidgetPhone phoneNumbers={phoneNumbers} />
+  }
+
   if (!session) {
     return <PanelLogin supabase={supabase} />
   }
@@ -79,6 +85,7 @@ export function PanelApp() {
     return (
       <RemotePhone
         phoneNumbers={phoneNumbers}
+        accessToken={accessToken}
         onSignOut={() => supabase.auth.signOut()}
       />
     )
