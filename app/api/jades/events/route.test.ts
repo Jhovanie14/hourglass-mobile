@@ -1,41 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { JadesFeedEvent } from "@/lib/jades/feed"
 
-// Notifications the mocked Supabase chain returns, ordered by created_at asc.
-const notifRows = [
-  { id: "n1", type: "missed_call", reference_id: "c1", metadata: {}, is_read: false, created_at: "2026-07-07T00:00:01.000Z" },
-]
+vi.mock("@/lib/admin", () => ({ createAdminClient: () => ({}) }))
 
-// Supabase query chain: from().select().gt().in().order().order().limit()
-vi.mock("@/lib/admin", () => ({
-  createAdminClient: () => ({
-    from: () => ({
-      select: () => ({
-        gt: () => ({
-          in: () => ({
-            order: () => ({
-              order: () => ({
-                limit: async () => ({ data: notifRows, error: null }),
-              }),
-            }),
-          }),
-        }),
-      }),
-    }),
-  }),
+const fetchFeedEvents = vi.fn()
+vi.mock("@/lib/jades/feed-source", () => ({
+  fetchFeedEvents: (...a: unknown[]) => fetchFeedEvents(...a),
 }))
-
-const loadJadesEvent = vi.fn()
-vi.mock("@/lib/jades/load-event", () => ({ loadJadesEvent: (...a: unknown[]) => loadJadesEvent(...a) }))
-vi.mock("@/lib/jades/supabase-source", () => ({ supabaseDataSource: vi.fn(() => ({})) }))
 
 import { GET } from "./route"
 
+const sampleEvent: JadesFeedEvent = {
+  type: "call", direction: "inbound", from: "+18325559999", to: "+18325550100",
+  phone_label: "STR", timestamp: "2026-07-06T21:00:00.000Z", duration_sec: 0,
+  transcript: null, body: null, status: "missed",
+}
+
 beforeEach(() => {
   process.env.JADES_API_TOKEN = "tok"
-  loadJadesEvent.mockResolvedValue({
-    event_id: "n1", type: "missed_call", occurred_at: notifRows[0].created_at,
-    property: "x", property_line: "+1", data: {},
-  })
+  fetchFeedEvents.mockResolvedValue([sampleEvent])
 })
 afterEach(() => {
   delete process.env.JADES_API_TOKEN
@@ -48,18 +31,28 @@ function req(url: string, auth?: string) {
 
 describe("GET /api/jades/events", () => {
   it("401 without a valid token", async () => {
-    const res = await GET(req("https://x/api/jades/events?since=2026-07-07T00:00:00Z", "Bearer nope"))
+    const res = await GET(req("https://x/api/jades/events?since=2026-07-06T00:00:00Z", "Bearer nope"))
     expect(res.status).toBe(401)
   })
+
   it("400 when since is missing", async () => {
     const res = await GET(req("https://x/api/jades/events", "Bearer tok"))
     expect(res.status).toBe(400)
   })
-  it("200 with events + next_since", async () => {
-    const res = await GET(req("https://x/api/jades/events?since=2026-07-07T00:00:00Z", "Bearer tok"))
+
+  it("200 with flat events + latest_timestamp", async () => {
+    const res = await GET(req("https://x/api/jades/events?since=2026-07-06T00:00:00Z", "Bearer tok"))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.events).toHaveLength(1)
-    expect(body.next_since).toBe("2026-07-07T00:00:01.000Z")
+    expect(body.events).toEqual([sampleEvent])
+    expect(body.latest_timestamp).toBe("2026-07-06T21:00:00.000Z")
+  })
+
+  it("returns since as latest_timestamp when there are no events", async () => {
+    fetchFeedEvents.mockResolvedValue([])
+    const res = await GET(req("https://x/api/jades/events?since=2026-07-06T00:00:00Z", "Bearer tok"))
+    const body = await res.json()
+    expect(body.events).toEqual([])
+    expect(body.latest_timestamp).toBe("2026-07-06T00:00:00.000Z")
   })
 })
