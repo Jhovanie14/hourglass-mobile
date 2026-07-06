@@ -2,13 +2,16 @@ import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/admin"
 import { isValidBearer } from "@/lib/jades/auth"
 import { getJadesConfig } from "@/lib/jades/config"
-import { loadJadesEvent } from "@/lib/jades/load-event"
+import { fetchFeedEvents } from "@/lib/jades/feed-source"
 import { parseEventsQuery } from "@/lib/jades/query"
-import { supabaseDataSource } from "@/lib/jades/supabase-source"
-import type { Notification } from "@/types/notifications"
 
-const EVENT_TYPES = ["missed_call", "voicemail", "unread_message"] as const
-
+/**
+ * GET /api/jades/events?since=<ISO8601>&limit=<n>
+ *
+ * Returns inbound + outbound calls, SMS, and voicemails created after `since`,
+ * in Jades' flat feed shape, plus `latest_timestamp` for the next poll cursor.
+ * Bearer-authenticated with JADES_API_TOKEN.
+ */
 export async function GET(req: Request): Promise<Response> {
   const config = getJadesConfig()
   if (!config.apiToken) {
@@ -24,28 +27,14 @@ export async function GET(req: Request): Promise<Response> {
   }
   const { since, limit } = parsed.value
 
-  const supabase = createAdminClient()
-  const { data, error } = await supabase
-    .from("notifications")
-    .select("id, type, reference_id, metadata, is_read, created_at")
-    .gt("created_at", since)
-    .in("type", EVENT_TYPES as unknown as string[])
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(limit)
-
-  if (error) {
+  let events
+  try {
+    events = await fetchFeedEvents(createAdminClient(), since, limit)
+  } catch (err) {
+    console.error("Jades feed query failed:", err)
     return NextResponse.json({ error: "query failed" }, { status: 500 })
   }
 
-  const rows = (data ?? []) as Notification[]
-  const source = supabaseDataSource(supabase)
-  const events = []
-  for (const n of rows) {
-    const event = await loadJadesEvent(source, n)
-    if (event) events.push(event)
-  }
-
-  const nextSince = rows.length > 0 ? rows[rows.length - 1].created_at : since
-  return NextResponse.json({ events, next_since: nextSince })
+  const latestTimestamp = events.length > 0 ? events[events.length - 1].timestamp : since
+  return NextResponse.json({ events, latest_timestamp: latestTimestamp })
 }

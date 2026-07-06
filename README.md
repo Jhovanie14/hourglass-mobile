@@ -229,18 +229,46 @@ cn("px-4 py-2", isActive && "bg-primary", className)
 - Design tokens use **OKLCH** color values (not hex/rgb). This is intentional — OKLCH provides perceptually uniform color scaling and better dark mode contrast.
 - The `@/*` alias maps to the project root, so `@/components/ui/button` resolves to `./components/ui/button.tsx`.
 
-## Jades AI event integration (optional)
+## Jades AI event integration
 
-Set these env vars to enable pushing SMS / missed-call / voicemail events to the
-Jades AI and to expose the backfill endpoint. If unset, push is a silent no-op
-and the endpoint returns `503`.
+The Jades AI polls a read-only endpoint for new comms events.
 
-- `JADES_WEBHOOK_URL` — Jades' inbound webhook URL (push target)
-- `JADES_WEBHOOK_SECRET` — HMAC-SHA256 signing secret; share with Jades so it can
-  verify the `X-Hourglass-Signature` header (`sha256=HMAC(secret, "{timestamp}.{body}")`)
-- `JADES_API_TOKEN` — bearer token for `GET /api/jades/events?since=<ISO8601>&limit=<n>`
+**Endpoint:** `GET /api/jades/events?since=<ISO8601>&limit=<n>`
+**Auth:** `Authorization: Bearer <JADES_API_TOKEN>` (required)
 
-Events are enriched from the `notifications` table and delivered both as
-real-time signed pushes and via the bearer-protected backfill endpoint (the
-durable catch-up path). See
-`docs/superpowers/specs/2026-07-07-jades-event-integration-design.md`.
+Returns inbound **and** outbound calls, SMS, and voicemails created after
+`since`, plus `latest_timestamp` for the next poll:
+
+```json
+{
+  "events": [
+    {
+      "type": "call" | "sms" | "voicemail",
+      "direction": "inbound" | "outbound",
+      "from": "+1832...",
+      "to": "+1832...",
+      "phone_label": "TLP" | "STR" | "BB" | "HGI",
+      "timestamp": "2026-07-06T21:00:00.000Z",
+      "duration_sec": 120,
+      "transcript": null,
+      "body": "SMS text",
+      "status": "missed" | "answered" | "sent" | "received",
+      "audio_url": "https://..."
+    }
+  ],
+  "latest_timestamp": "2026-07-06T21:00:00.000Z"
+}
+```
+
+`phone_label` is passed straight from `phone_numbers.label`. `transcript` is
+`null` (Jades transcribes from `audio_url`, present on voicemails).
+
+**Env vars:**
+
+- `JADES_API_TOKEN` — **required** bearer token for the endpoint. If unset the
+  endpoint returns `503`. Share the same value with Jades.
+- `JADES_WEBHOOK_URL`, `JADES_WEBHOOK_SECRET` — **optional**, only for the
+  real-time push path (`lib/jades/deliver.ts`, dormant while Jades polls). Leave
+  unset unless you enable push.
+
+See `docs/superpowers/specs/2026-07-07-jades-event-integration-design.md`.
