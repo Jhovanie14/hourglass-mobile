@@ -228,3 +228,19 @@ cn("px-4 py-2", isActive && "bg-primary", className)
 - **Tailwind v4** has a different config format from v3 — there is no `tailwind.config.js`. All theme customization is done in `app/globals.css` using `@theme inline`.
 - Design tokens use **OKLCH** color values (not hex/rgb). This is intentional — OKLCH provides perceptually uniform color scaling and better dark mode contrast.
 - The `@/*` alias maps to the project root, so `@/components/ui/button` resolves to `./components/ui/button.tsx`.
+
+## Jades AI event integration (optional)
+
+Set these env vars to enable pushing SMS / missed-call / voicemail events to the
+Jades AI and to expose the backfill endpoint. If unset, push is a silent no-op
+and the endpoint returns `503`.
+
+- `JADES_WEBHOOK_URL` — Jades' inbound webhook URL (push target)
+- `JADES_WEBHOOK_SECRET` — HMAC-SHA256 signing secret; share with Jades so it can
+  verify the `X-Hourglass-Signature` header (`sha256=HMAC(secret, "{timestamp}.{body}")`)
+- `JADES_API_TOKEN` — bearer token for `GET /api/jades/events?since=<ISO8601>&limit=<n>`
+
+Events are enriched from the `notifications` table and delivered both as
+real-time signed pushes and via the bearer-protected backfill endpoint (the
+durable catch-up path). See
+`docs/superpowers/specs/2026-07-07-jades-event-integration-design.md`.
