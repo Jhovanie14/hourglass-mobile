@@ -1,6 +1,7 @@
 import crypto from "crypto"
 import { createAdminClient } from "@/lib/admin"
 import { enqueueJadesDelivery } from "@/lib/jades/notify"
+import { sendSmsPushToAgents } from "@/lib/push"
 import { isStartKeyword, isStopKeyword } from "@/lib/sms-consent"
 import type { Notification } from "@/types/notifications"
 
@@ -216,6 +217,13 @@ async function handleMessageReceived(
   } else if (notif) {
     enqueueJadesDelivery(supabase, notif as Notification)
   }
+
+  // Mobile push fan-out (data-only FCM; never throws — see lib/push.ts).
+  await sendSmsPushToAgents(supabase, {
+    conversationId: conversation.id,
+    title: `${phoneNumber.label} — new message`,
+    body: `${fromNumber}: ${messageText?.slice(0, 80) ?? "[Media]"}`,
+  })
 }
 
 // Records (STOP) or clears (START) a suppression row for the sender, mirroring
