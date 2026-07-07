@@ -1,0 +1,16 @@
+-- Verified 2026-07-08 (mobile SMS tab work): the unread_count pipeline the
+-- mobile app's badges depend on already exists in Supabase. Nothing was
+-- created; this file records what IS live, checked via:
+--
+--   select t.tgname, c.relname from pg_trigger t
+--   join pg_class c on c.oid = t.tgrelid
+--   where not t.tgisinternal and c.relname in ('messages','conversations');
+--
+-- Results:
+--   * trigger `on_new_message` on `messages` — increments
+--     conversations.unread_count on inbound inserts (fires the Realtime
+--     UPDATE the mobile MessagesProvider consumes for badges).
+--   * `supabase_realtime` publication includes BOTH `conversations` and
+--     `messages` (mobile + web postgres_changes subscriptions).
+--   * function `mark_conversation_read(conversation_id)` — RPC used by web
+--     chat view and the mobile thread screen to clear unread.
