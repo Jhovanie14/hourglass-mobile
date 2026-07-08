@@ -1,25 +1,32 @@
 import type { createAdminClient } from "@/lib/admin"
-import { getOnlineAgentUserIds } from "./presence"
+import { getAvailableDeviceUserIds, getOnlineAgentUserIds } from "./presence"
 
 type Admin = ReturnType<typeof createAdminClient>
 
 export type ReachableAgent = { userId: string; sipUsername: string }
 
 /**
- * Agents who are both online (fresh presence) AND reachable (have a SIP
- * credential). Only these can be dialed. Reuses the Phase 2 presence window.
+ * Agents who are reachable for ring-all, i.e. have a SIP credential AND are
+ * either:
+ *  - online on the web (fresh presence heartbeat, Phase 2 window), or
+ *  - available on mobile (agent_devices.is_available — a declared state,
+ *    because a backgrounded phone can't heartbeat; FCM push wakes it).
  */
 export async function getOnlineReachableAgents(
   admin: Admin,
   now: Date = new Date()
 ): Promise<ReachableAgent[]> {
-  const onlineIds = await getOnlineAgentUserIds(admin, now)
-  if (onlineIds.length === 0) return []
+  const [onlineIds, deviceIds] = await Promise.all([
+    getOnlineAgentUserIds(admin, now),
+    getAvailableDeviceUserIds(admin),
+  ])
+  const reachableIds = [...new Set([...onlineIds, ...deviceIds])]
+  if (reachableIds.length === 0) return []
 
   const { data, error } = await admin
     .from("agent_sip_credentials")
     .select("user_id, sip_username")
-    .in("user_id", onlineIds)
+    .in("user_id", reachableIds)
   if (error) throw error
 
   return (data ?? []).map((r: { user_id: string; sip_username: string }) => ({

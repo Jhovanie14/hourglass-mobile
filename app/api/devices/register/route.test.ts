@@ -49,6 +49,22 @@ describe("/api/devices/register", () => {
     )
   })
 
+  it("POST writes is_available when provided", async () => {
+    vi.mocked(getRequestUserId).mockResolvedValue("user-1")
+    await POST(jsonRequest("POST", { token: "fcm-abc", isAvailable: true }))
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ fcm_token: "fcm-abc", is_available: true }),
+      { onConflict: "fcm_token" }
+    )
+  })
+
+  it("POST leaves is_available untouched when omitted", async () => {
+    vi.mocked(getRequestUserId).mockResolvedValue("user-1")
+    await POST(jsonRequest("POST", { token: "fcm-abc" }))
+    const written = upsert.mock.calls[0][0]
+    expect(written).not.toHaveProperty("is_available")
+  })
+
   it("DELETE removes the caller's token", async () => {
     vi.mocked(getRequestUserId).mockResolvedValue("user-1")
     const res = await DELETE(jsonRequest("DELETE", { token: "fcm-abc" }))

@@ -11,6 +11,7 @@ import {
 
 type Errs = {
   presence?: unknown
+  devices?: unknown
   creds?: unknown
   claim?: unknown
   legsRead?: unknown
@@ -22,6 +23,7 @@ type Errs = {
 // Errors are injectable per operation to exercise the `if (error) throw error` paths.
 function makeAdmin(opts: {
   online?: { user_id: string }[]
+  devices?: { user_id: string }[]
   creds?: { user_id: string; sip_username: string }[]
   claimRows?: { id: string }[]
   ringing?: { agent_leg_id: string }[]
@@ -36,6 +38,12 @@ function makeAdmin(opts: {
     .fn()
     .mockResolvedValue({ data: opts.online ?? [], error: e.presence ?? null })
   const presenceSelect = vi.fn(() => ({ gte: presenceGte }))
+
+  // agent_devices: select("user_id").eq("is_available", true)
+  const devicesEq = vi
+    .fn()
+    .mockResolvedValue({ data: opts.devices ?? [], error: e.devices ?? null })
+  const devicesSelect = vi.fn(() => ({ eq: devicesEq }))
 
   const credsIn = vi.fn().mockResolvedValue({ data: opts.creds ?? [], error: e.creds ?? null })
   const credsSelect = vi.fn(() => ({ in: credsIn }))
@@ -69,6 +77,7 @@ function makeAdmin(opts: {
 
   const from = vi.fn((table: string) => {
     if (table === "agent_presence") return { select: presenceSelect }
+    if (table === "agent_devices") return { select: devicesSelect }
     if (table === "agent_sip_credentials") return { select: credsSelect }
     if (table === "calls") return { update }
     if (table === "call_agent_legs") return { insert, select: legsSelect, update: legUpdate }
@@ -83,6 +92,7 @@ function makeAdmin(opts: {
     from,
     credsIn,
     presenceGte,
+    devicesEq,
     legUpdate,
     claimEq1,
   }
@@ -116,6 +126,62 @@ describe("getOnlineReachableAgents", () => {
       errors: { creds: new Error("creds boom") },
     })
     await expect(getOnlineReachableAgents(admin.client, new Date())).rejects.toThrow(/creds boom/)
+  })
+
+  // Mobile availability: a backgrounded phone can't heartbeat (Android
+  // suspends JS timers), so agents with an available registered device must
+  // be dialed even with stale presence — the FCM push wakes the phone.
+  it("also dials agents with an available mobile device (stale presence)", async () => {
+    const admin = makeAdmin({
+      online: [{ user_id: "web-agent" }],
+      devices: [{ user_id: "mobile-agent" }],
+      creds: [
+        { user_id: "web-agent", sip_username: "sip-web" },
+        { user_id: "mobile-agent", sip_username: "sip-mobile" },
+      ],
+    })
+
+    const result = await getOnlineReachableAgents(admin.client, new Date())
+
+    const askedIds = admin.credsIn.mock.calls[0][1] as string[]
+    expect([...askedIds].sort()).toEqual(["mobile-agent", "web-agent"])
+    expect(result).toEqual([
+      { userId: "web-agent", sipUsername: "sip-web" },
+      { userId: "mobile-agent", sipUsername: "sip-mobile" },
+    ])
+  })
+
+  it("dedupes an agent online on web AND available on mobile", async () => {
+    const admin = makeAdmin({
+      online: [{ user_id: "agent-1" }],
+      devices: [{ user_id: "agent-1" }],
+      creds: [{ user_id: "agent-1", sip_username: "sip-1" }],
+    })
+
+    const result = await getOnlineReachableAgents(admin.client, new Date())
+
+    expect(admin.credsIn.mock.calls[0][1]).toEqual(["agent-1"])
+    expect(result).toEqual([{ userId: "agent-1", sipUsername: "sip-1" }])
+  })
+
+  it("dials a mobile-only agent when nobody is online on web", async () => {
+    const admin = makeAdmin({
+      online: [],
+      devices: [{ user_id: "mobile-agent" }],
+      creds: [{ user_id: "mobile-agent", sip_username: "sip-mobile" }],
+    })
+
+    const result = await getOnlineReachableAgents(admin.client, new Date())
+
+    expect(result).toEqual([{ userId: "mobile-agent", sipUsername: "sip-mobile" }])
+  })
+
+  it("throws when the device read errors", async () => {
+    const admin = makeAdmin({
+      online: [{ user_id: "a" }],
+      errors: { devices: new Error("devices boom") },
+    })
+    await expect(getOnlineReachableAgents(admin.client, new Date())).rejects.toThrow(/devices boom/)
   })
 })
 

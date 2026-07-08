@@ -48,6 +48,27 @@ export async function getOnlineAgentUserIds(
 }
 
 /**
+ * User ids with at least one push-registered device marked available.
+ *
+ * Mobile agents can't prove liveness with heartbeats — Android suspends JS
+ * timers as soon as the app leaves the foreground (that's why call delivery
+ * there is FCM-push-based). So mobile availability is a DECLARED state: the
+ * app's Online toggle flips `agent_devices.is_available`, and logout deletes
+ * the row. Ring-all dials these agents regardless of presence freshness; the
+ * push wakes the phone.
+ */
+export async function getAvailableDeviceUserIds(
+  admin: Admin
+): Promise<string[]> {
+  const { data, error } = await admin
+    .from("agent_devices")
+    .select("user_id")
+    .eq("is_available", true)
+  if (error) throw error
+  return [...new Set((data ?? []).map((r: { user_id: string }) => r.user_id))]
+}
+
+/**
  * Immediately drop an agent from the online set (manual "go offline").
  *
  * Deletes the agent's single `agent_presence` row so ring-all stops dialing them

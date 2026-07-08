@@ -13,3 +13,10 @@ create table if not exists public.agent_devices (
 
 -- Service-role only: the /api/devices/register route is the sole reader/writer.
 alter table public.agent_devices enable row level security;
+
+-- Added 2026-07-09: declared call availability. A backgrounded phone cannot
+-- heartbeat (Android suspends JS timers), so the app's Online toggle sets this
+-- flag instead, and ring-all dials agents with an available device regardless
+-- of presence freshness (the FCM push wakes the phone).
+alter table public.agent_devices
+  add column if not exists is_available boolean not null default false;

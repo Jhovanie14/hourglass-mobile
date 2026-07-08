@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest"
-import { recordHeartbeat, getOnlineAgentUserIds, expirePresence } from "./presence"
+import {
+  recordHeartbeat,
+  getOnlineAgentUserIds,
+  getAvailableDeviceUserIds,
+  expirePresence,
+} from "./presence"
 
 // Minimal Supabase-admin-like mock.
 //   from(t).upsert(row, opts)                 -> { error }
@@ -77,6 +82,41 @@ describe("getOnlineAgentUserIds", () => {
     await expect(
       getOnlineAgentUserIds(admin.client, new Date())
     ).rejects.toThrow(/read failed/)
+  })
+})
+
+describe("getAvailableDeviceUserIds", () => {
+  // agent_devices chain: from(t).select(c).eq(col, val) -> { data, error }
+  function makeDeviceAdmin(opts: {
+    devices?: { user_id: string }[]
+    readErr?: unknown
+  }) {
+    const eq = vi
+      .fn()
+      .mockResolvedValue({ data: opts.devices ?? [], error: opts.readErr ?? null })
+    const select = vi.fn(() => ({ eq }))
+    const from = vi.fn(() => ({ select }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { client: { from } as any, from, select, eq }
+  }
+
+  it("returns distinct user ids of devices marked available", async () => {
+    const admin = makeDeviceAdmin({
+      devices: [{ user_id: "a" }, { user_id: "b" }, { user_id: "a" }],
+    })
+
+    const ids = await getAvailableDeviceUserIds(admin.client)
+
+    expect(admin.from).toHaveBeenCalledWith("agent_devices")
+    expect(admin.eq).toHaveBeenCalledWith("is_available", true)
+    expect(ids).toEqual(["a", "b"])
+  })
+
+  it("throws when the query returns an error", async () => {
+    const admin = makeDeviceAdmin({ readErr: new Error("read failed") })
+    await expect(getAvailableDeviceUserIds(admin.client)).rejects.toThrow(
+      /read failed/
+    )
   })
 })
 
