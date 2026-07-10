@@ -37,8 +37,9 @@ Reference mockup: a compact top-right card, softphone-style (see chat image).
   this is already true today and unchanged. Ringing while Chrome is closed would
   require a native/mobile push path (separate project).
 - Redesigning the panel, ringtone, or call engine.
-- Changing how calls are answered from the OS notification or in-tab widget
-  (those keep working).
+- The in-tab widget keeps working unchanged. The **incoming-call OS notification
+  toast is being removed** (the new window replaces it); the `auth-required` and
+  `mic-blocked` notifications stay.
 
 ## Key facts grounding the design (verified in code)
 
@@ -100,9 +101,11 @@ Rejected alternatives:
   **close the window** (`chrome.windows.remove(windowId)`), clear the tracked id.
 - Listen to `chrome.windows.onRemoved` to clear the tracked id if the user
   closes it manually.
-- Keep the existing **ring audio** and the **OS notification** as a fallback
-  (covers the rare case where window creation is blocked). The badge behavior is
-  unchanged.
+- **Remove the incoming-call OS notification toast** (the `INCOMING_ID`
+  `chrome.notifications.create` on the `incoming` event, plus its
+  `onButtonClicked`/`onClicked` answer handlers) — the popup window replaces it.
+  Keep the **ring audio** and the **badge**. Keep the `auth-required` and
+  `mic-blocked` notifications untouched.
 
 ### 3. Extension: pure policy module (new, unit-tested)
 
@@ -152,12 +155,15 @@ call ends → "panel-event: call-ended" → service worker closes the window
   to be unmissable). OS focus-stealing rules may sometimes flash the taskbar
   instead of full foreground; acceptable.
 - **Manual close while ringing:** closing the window does **not** decline the
-  call (avoids accidental drops). The ring + OS notification continue until the
-  call is answered elsewhere or times out.
-- **Answered elsewhere:** if answered from the OS notification while the window
-  is open, the window shows the live-call card (state-sync driven). If a call is
-  answered before the window exists, the defensive `active`-with-no-window rule
-  still opens it as the call screen.
+  call (avoids accidental drops). The ring continues until the call is answered
+  or times out. An unanswered call — including when Chrome is closed — is
+  recorded as a missed/ring by the **server-side Telnyx webhook** (the single
+  source of truth in Supabase), which the window plays no part in; closing it
+  therefore cannot corrupt call records.
+- **Answered elsewhere:** if answered from the toolbar popup or in-tab widget
+  while the window is open, the window shows the live-call card (state-sync
+  driven). If a call is answered before the window exists, the defensive
+  `active`-with-no-window rule still opens it as the call screen.
 - **Reuse for the next call:** window is torn down on `idle`; the next `incoming`
   creates a fresh one.
 
@@ -188,6 +194,7 @@ Two channels (as with the earlier auth work):
   Revisit (pre-warm) only if it feels laggy in testing.
 - **OS focus-stealing** behavior varies by OS/settings; the window may flash
   rather than fully foreground when another app is fullscreen.
-- Keeping both the OS notification and the window is intentional redundancy; if
-  it feels noisy in testing, drop the toast for incoming (keep it only for the
-  `auth-required` / `mic-blocked` cases).
+- **Window creation failure:** with the incoming toast removed, the popup window
+  is the only visual alert (ring still plays). If `chrome.windows.create` ever
+  fails, the agent gets audio only. Log failures; revisit a fallback only if it
+  proves flaky in testing.
