@@ -11,13 +11,16 @@ import { PanelDialer } from "./panel-dialer"
 import { BackgroundPhone } from "./background-phone"
 import { RemotePhone } from "./remote-phone"
 import { WidgetPhone } from "./widget-phone"
+import { CallWindowPhone } from "./call-window-phone"
 
-type PanelMode = "local" | "background" | "remote" | "widget"
+type PanelMode = "local" | "background" | "remote" | "widget" | "call"
 
 function getMode(): PanelMode {
   if (typeof window === "undefined") return "local"
   const m = new URLSearchParams(window.location.search).get("mode")
-  return m === "background" || m === "remote" || m === "widget" ? m : "local"
+  return m === "background" || m === "remote" || m === "widget" || m === "call"
+    ? m
+    : "local"
 }
 
 export function PanelApp() {
@@ -89,6 +92,10 @@ export function PanelApp() {
         onSignOut={() => supabase.auth.signOut()}
       />
     )
+  }
+
+  if (mode === "call") {
+    return <CallWindowPhone phoneNumbers={phoneNumbers} />
   }
 
   return (
