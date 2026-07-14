@@ -1,16 +1,58 @@
 // Coordinator: keeps the offscreen phone alive, turns PanelEvents into
-// notifications/badge, drives the per-tab call widget, and issues Answer/Decline
-// from notification buttons (button clicks are user gestures, so opening the
-// popup is allowed).
+// notifications/badge, drives the per-tab call widget, and opens/closes the
+// dedicated incoming-call popup window as call state changes.
 import { canInjectWidget, shouldShowWidget } from "./lib/widget-policy.js"
 import { needsSetup } from "./lib/setup-policy.js"
+import { shouldOpenCallWindow, shouldCloseCallWindow } from "./lib/call-window-policy.js"
 
-const INCOMING_ID = "hourglass-incoming"
 const AUTH_ID = "hourglass-auth"
 const MIC_ID = "hourglass-mic"
 
 // Latest serialized call status from the offscreen engine; drives the widget.
 let lastStatus = "idle"
+
+// The dedicated incoming-call popup window, if one is open.
+let callWindowId = null
+
+async function openCallWindow() {
+  // Reuse an existing window if it's still around (guards repeated state-syncs
+  // and create races).
+  if (callWindowId !== null) {
+    try {
+      await chrome.windows.get(callWindowId)
+      return
+    } catch {
+      callWindowId = null
+    }
+  }
+  try {
+    const win = await chrome.windows.create({
+      url: chrome.runtime.getURL("call-window.html"),
+      type: "popup",
+      focused: true,
+      width: 360,
+      height: 250,
+    })
+    callWindowId = win.id ?? null
+  } catch (e) {
+    console.error("openCallWindow failed:", e)
+  }
+}
+
+async function closeCallWindow() {
+  if (callWindowId === null) return
+  const id = callWindowId
+  callWindowId = null
+  try {
+    await chrome.windows.remove(id)
+  } catch {}
+}
+
+// If the agent closes the window by hand, forget it (closing does NOT decline —
+// the call keeps ringing; the server records a missed call if unanswered).
+chrome.windows.onRemoved.addListener((id) => {
+  if (id === callWindowId) callWindowId = null
+})
 
 async function ensureOffscreen() {
   try {
@@ -67,38 +109,20 @@ async function updateActiveTabWidget() {
     .catch(() => {})
 }
 
-function sendCommand(cmd) {
-  chrome.runtime
-    .sendMessage({
-      kind: "panel-command",
-      payload: { source: "hourglass-panel", type: "cmd", ...cmd },
-    })
-    .catch(() => {})
-}
-
 chrome.runtime.onMessage.addListener((message) => {
   if (!message || message.kind !== "panel-event") return
   ensureOffscreen()
   const evt = message.payload
 
   if (evt.type === "incoming") {
-    chrome.notifications.create(INCOMING_ID, {
-      type: "basic",
-      iconUrl: "icon128.png",
-      title: "Incoming call",
-      message: evt.label ? `${evt.caller} → ${evt.label}` : String(evt.caller),
-      buttons: [{ title: "Answer" }, { title: "Decline" }],
-      requireInteraction: true,
-      priority: 2,
-    })
+    // The dedicated call window (opened from the state-sync handler below) is now
+    // the incoming-call UI; no OS notification toast. Badge still marks the ring.
     chrome.action.setBadgeText({ text: "●" })
     chrome.action.setBadgeBackgroundColor({ color: "#3b82f6" })
   } else if (evt.type === "call-active") {
-    chrome.notifications.clear(INCOMING_ID)
     chrome.action.setBadgeText({ text: "●" })
     chrome.action.setBadgeBackgroundColor({ color: "#22c55e" })
   } else if (evt.type === "call-ended") {
-    chrome.notifications.clear(INCOMING_ID)
     chrome.action.setBadgeText({ text: "" })
   } else if (evt.type === "auth-required") {
     chrome.notifications.create(AUTH_ID, {
@@ -120,11 +144,15 @@ chrome.runtime.onMessage.addListener((message) => {
     })
   } else if (evt.type === "state-sync") {
     if (evt.state) {
-      lastStatus = evt.state.status
+      const prevStatus = lastStatus
+      const nextStatus = evt.state.status
+      lastStatus = nextStatus
       updateActiveTabWidget()
+      if (shouldOpenCallWindow(prevStatus, nextStatus)) openCallWindow()
+      if (shouldCloseCallWindow(prevStatus, nextStatus)) closeCallWindow()
       if (evt.state.signedIn) {
         chrome.notifications.clear(AUTH_ID)
-        if (evt.state.status === "idle") chrome.action.setBadgeText({ text: "" })
+        if (nextStatus === "idle") chrome.action.setBadgeText({ text: "" })
       }
     }
   }
@@ -154,18 +182,6 @@ chrome.runtime.onMessage.addListener(async (message) => {
     if (await chrome.offscreen.hasDocument()) await chrome.offscreen.closeDocument()
   } catch {}
   ensureOffscreen()
-})
-
-chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
-  if (id !== INCOMING_ID) return
-  ensureOffscreen()
-  if (buttonIndex === 0) {
-    sendCommand({ cmd: "answer" })
-    openSidePanel()
-  } else {
-    sendCommand({ cmd: "decline" })
-  }
-  chrome.notifications.clear(INCOMING_ID)
 })
 
 chrome.notifications.onClicked.addListener((id) => {

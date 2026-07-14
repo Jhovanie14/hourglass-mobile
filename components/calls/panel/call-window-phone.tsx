@@ -28,12 +28,13 @@ function useDuration(startedAt: number | null): string {
 }
 
 /**
- * Compact "answer from any tab" widget. One-phone rule: never opens WebRTC —
- * renders state-sync from the offscreen engine and sends commands back.
- * phoneNumbers is unused today but kept for parity with the other panel modes
- * and future click-to-dial from the widget.
+ * Full-window softphone card for the dedicated incoming-call popup window
+ * (mode=call). One-phone rule: never opens WebRTC — renders state-sync from the
+ * offscreen engine and sends commands back, same as WidgetPhone, but fills the
+ * window instead of pinning to a corner. phoneNumbers is unused today; kept for
+ * parity with the other panel modes.
  */
-export function WidgetPhone(_props: { phoneNumbers: PhoneNumber[] }) {
+export function CallWindowPhone(_props: { phoneNumbers: PhoneNumber[] }) {
   const [state, setState] = useState<SerializedCallState>(IDLE_STATE)
 
   useEffect(() => {
@@ -51,30 +52,34 @@ export function WidgetPhone(_props: { phoneNumbers: PhoneNumber[] }) {
   const duration = useDuration(state.status === "active" ? state.startedAt : null)
   const inCall = state.status !== "idle" && state.status !== "incoming"
 
-  if (state.status === "idle") return null
-
-  if (state.status === "incoming") {
-    return (
-      <IncomingCallPopup
-        callerNumber={state.callerNumber ?? "Unknown"}
-        companyLabel={state.companyLabel}
-        companyNumber={state.companyNumber}
-        busy={false}
-        onAnswer={() => send({ cmd: "answer" })}
-        onReject={() => send({ cmd: "decline" })}
-      />
-    )
-  }
-
-  if (!inCall) return null
-
   return (
-    <InCallCard
-      remoteNumber={state.remoteNumber ?? "Unknown"}
-      duration={duration}
-      muted={state.muted}
-      onToggleMute={() => send({ cmd: state.muted ? "unmute" : "mute" })}
-      onHangup={() => send({ cmd: "hangup" })}
-    />
+    <div className="flex h-full min-h-screen items-center justify-center bg-background p-3">
+      {state.status === "incoming" && (
+        <IncomingCallPopup
+          className="w-full max-w-sm"
+          callerNumber={state.callerNumber ?? "Unknown"}
+          companyLabel={state.companyLabel}
+          companyNumber={state.companyNumber}
+          busy={false}
+          onAnswer={() => send({ cmd: "answer" })}
+          onReject={() => send({ cmd: "decline" })}
+        />
+      )}
+
+      {inCall && (
+        <InCallCard
+          className="w-full max-w-sm"
+          remoteNumber={state.remoteNumber ?? "Unknown"}
+          duration={duration}
+          muted={state.muted}
+          onToggleMute={() => send({ cmd: state.muted ? "unmute" : "mute" })}
+          onHangup={() => send({ cmd: "hangup" })}
+        />
+      )}
+
+      {state.status === "idle" && (
+        <p className="text-sm text-muted-foreground">No active call</p>
+      )}
+    </div>
   )
 }
