@@ -8,6 +8,9 @@ type Props = {
   busy: boolean
   onAnswer: () => void
   onReject: () => void
+  // Positioning/size for the outer wrapper. Default = bottom-right corner card;
+  // the call window overrides this to fill its window.
+  className?: string
 }
 
 export function IncomingCallPopup({
@@ -17,9 +20,12 @@ export function IncomingCallPopup({
   busy,
   onAnswer,
   onReject,
+  className = "fixed right-6 bottom-6 z-50 w-72",
 }: Props) {
   return (
-    <div className="fixed right-6 bottom-6 z-50 w-72 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+    <div
+      className={`${className} overflow-hidden rounded-2xl border border-border bg-card shadow-2xl`}
+    >
       <div className="relative flex items-center gap-3 bg-green-500/10 px-4 py-3">
         <span className="relative flex h-3 w-3">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
