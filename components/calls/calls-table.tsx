@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format-duration"
 import { createClient } from "@/lib/client"
 import { useWebRTC } from "@/components/calls/webrtc-provider"
+import { TranscriptView } from "@/components/calls/transcript-view"
 import type { Call, StatusFilter, Voicemail } from "@/types/calls"
 
 const STATUS_STYLES: Record<string, string> = {
@@ -307,6 +308,17 @@ export function CallsTable({
                               <VoicemailPlayer callId={call.id} />
                             </div>
                           )}
+                          {call.has_transcript && (
+                            <div>
+                              <p className="mb-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                Transcript
+                              </p>
+                              <TranscriptView
+                                callId={call.id}
+                                contactNumber={call.contact_number}
+                              />
+                            </div>
+                          )}
                           <dl className="grid gap-x-8 gap-y-1.5 text-xs sm:grid-cols-2 lg:grid-cols-4">
                             <DetailRow label="Telnyx Call ID" value={call.telnyx_call_id?.slice(0, 24) ?? "—"} mono />
                             <DetailRow
@@ -378,6 +390,11 @@ export function CallsTable({
               {call.has_voicemail && (
                 <div className="mt-2">
                   <VoicemailPlayer callId={call.id} />
+                </div>
+              )}
+              {call.has_transcript && (
+                <div className="mt-2">
+                  <TranscriptView callId={call.id} contactNumber={call.contact_number} />
                 </div>
               )}
 
