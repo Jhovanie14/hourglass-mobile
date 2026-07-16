@@ -38,12 +38,13 @@ export function TranscriptView({
     let cancelled = false
     async function load() {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("call_transcript_segments")
           .select("id, call_id, speaker, transcript, confidence, occurred_at, created_at")
           .eq("call_id", callId)
           .order("occurred_at", { ascending: true })
           .order("created_at", { ascending: true })
+        if (error) console.error("Failed to fetch transcript:", error)
         if (!cancelled) setSegments((data ?? []) as TranscriptSegment[])
       } catch (err) {
         console.error("Failed to fetch transcript:", err)
