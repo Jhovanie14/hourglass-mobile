@@ -21,6 +21,7 @@ export type Call = {
   ended_at: string | null
   created_at: string
   has_voicemail?: boolean
+  has_transcript?: boolean
   phone_numbers?: {
     id: string
     label: string
@@ -35,6 +36,16 @@ export type Voicemail = {
   recording_url: string
   duration_seconds: number
   is_heard: boolean
+  created_at: string
+}
+
+export type TranscriptSegment = {
+  id: string
+  call_id: string
+  speaker: "agent" | "contact" | null
+  transcript: string
+  confidence: number | null
+  occurred_at: string
   created_at: string
 }
 

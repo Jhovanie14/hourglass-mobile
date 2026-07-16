@@ -9,8 +9,14 @@ import {
   hangupLeg,
   bridgeLegs,
   startVoicemail,
+  startCallTranscription,
   DEFAULT_GREETING,
 } from "@/lib/telnyx/voice-orchestrator"
+import {
+  isTranscriptionEnabled,
+  segmentFromEvent,
+  type TranscriptionData,
+} from "@/lib/telnyx/transcription"
 import {
   getOnlineReachableAgents,
   recordAgentLegs,
@@ -47,11 +53,14 @@ type TelnyxCallPayload = {
   recording_started_at?: string
   recording_ended_at?: string
   duration_ms?: number
+  // call.transcription fields
+  transcription_data?: TranscriptionData
 }
 
 type TelnyxVoiceWebhookBody = {
   data: {
     event_type: string
+    occurred_at?: string
     payload: TelnyxCallPayload
   }
 }
@@ -96,6 +105,9 @@ export async function POST(req: Request) {
       break
     case "call.recording.saved":
       await handleRecordingSaved(supabase, payload)
+      break
+    case "call.transcription":
+      await handleTranscription(supabase, payload, body.data.occurred_at)
       break
     default:
       console.log("ℹ️ Ignoring voice event:", event_type)
@@ -282,6 +294,13 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
   // finalizes it as `completed` (not `failed`).
   if (action === "mark_outbound_answered") {
     await markOutboundAnswered(supabase, payload.call_control_id)
+    if (isTranscriptionEnabled(process.env as Record<string, string | undefined>)) {
+      try {
+        await startCallTranscription(payload.call_control_id)
+      } catch (err) {
+        console.error("⚠️ Failed to start transcription (outbound):", err)
+      }
+    }
     return
   }
 
@@ -295,6 +314,13 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
           .from("calls")
           .update({ started_at: new Date().toISOString() })
           .eq("id", call.id)
+        if (isTranscriptionEnabled(process.env as Record<string, string | undefined>)) {
+          try {
+            await startCallTranscription(payload.call_control_id)
+          } catch (err) {
+            console.error("⚠️ Failed to start transcription (inbound):", err)
+          }
+        }
         return
       } catch (err) {
         console.error("⚠️ Bridge failed; falling back to voicemail:", err)
@@ -522,4 +548,42 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
   console.log(
     `📬 Voicemail saved for call ${call.id}, duration: ${Math.round(durationMs / 1000)}s`
   )
+}
+
+async function handleTranscription(
+  supabase: SupabaseClient,
+  payload: TelnyxCallPayload,
+  occurredAt: string | undefined
+) {
+  const { data: call } = await supabase
+    .from("calls")
+    .select("id, direction, has_transcript")
+    .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
+  if (!call) {
+    console.warn("⚠️ No call found for transcription event:", payload.call_control_id)
+    return
+  }
+
+  const segment = segmentFromEvent(call.direction, payload.transcription_data, occurredAt)
+  if (!segment) return
+
+  const { error } = await supabase.from("call_transcript_segments").insert({
+    call_id: call.id,
+    ...segment,
+  })
+  if (error) {
+    console.error("⚠️ Failed to insert transcript segment:", error)
+    return
+  }
+
+  if (!call.has_transcript) {
+    const { error: flagError } = await supabase
+      .from("calls")
+      .update({ has_transcript: true })
+      .eq("id", call.id)
+    if (flagError) {
+      console.error("⚠️ Failed to set has_transcript flag:", flagError)
+    }
+  }
 }
