@@ -99,3 +99,22 @@ export async function startVoicemail(aLegId: string, greeting: string): Promise<
     })
   )
 }
+
+/** Start real-time transcription on a live call leg — both tracks, Telnyx
+ *  engine (the client-approved $0.025/min option, and the only engine that
+ *  labels which track spoke). Telnyx stops it automatically at hang-up. */
+export async function startCallTranscription(callControlId: string): Promise<void> {
+  const telnyx = getTelnyxClient()
+  await withRetry(() =>
+    telnyx.calls.actions.startTranscription(callControlId, {
+      transcription_engine: "Telnyx",
+      transcription_engine_config: {
+        transcription_engine: "Telnyx",
+        language: "en",
+        transcription_model: "openai/whisper-large-v3-turbo",
+      },
+      transcription_tracks: "both",
+      command_id: commandId(),
+    })
+  )
+}

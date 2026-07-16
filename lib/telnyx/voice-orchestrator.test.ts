@@ -3,18 +3,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // vi.mock is hoisted above imports, so the spies it references must come from
 // vi.hoisted (also hoisted) — a plain `const dial = vi.fn()` would be in the
 // temporal dead zone when the factory runs.
-const { dial, hangup } = vi.hoisted(() => ({ dial: vi.fn(), hangup: vi.fn() }))
+const { dial, hangup, startTranscription } = vi.hoisted(() => ({
+  dial: vi.fn(),
+  hangup: vi.fn(),
+  startTranscription: vi.fn(),
+}))
 vi.mock("./client", () => ({
-  getTelnyxClient: () => ({ calls: { dial, actions: { hangup } } }),
+  getTelnyxClient: () => ({ calls: { dial, actions: { hangup, startTranscription } } }),
   withRetry: (fn: () => unknown) => fn(),
 }))
 
-import { dialAgentLeg, hangupLeg } from "./voice-orchestrator"
+import { dialAgentLeg, hangupLeg, startCallTranscription } from "./voice-orchestrator"
 import { decodeClientState } from "./client-state"
 
 beforeEach(() => {
   dial.mockReset()
   hangup.mockReset()
+  startTranscription.mockReset()
   process.env.TELNYX_VOICE_APP_ID = "app-1"
 })
 
@@ -50,5 +55,25 @@ describe("hangupLeg", () => {
     hangup.mockResolvedValue({})
     await hangupLeg("b-leg-9")
     expect(hangup).toHaveBeenCalledWith("b-leg-9", expect.objectContaining({}))
+  })
+})
+
+describe("startCallTranscription", () => {
+  it("starts Telnyx-engine transcription of both tracks on the given leg", async () => {
+    startTranscription.mockResolvedValue({})
+
+    await startCallTranscription("a-leg-9")
+
+    expect(startTranscription).toHaveBeenCalledTimes(1)
+    const [legId, body] = startTranscription.mock.calls[0]
+    expect(legId).toBe("a-leg-9")
+    expect(body.transcription_engine).toBe("Telnyx")
+    expect(body.transcription_tracks).toBe("both")
+    expect(body.transcription_engine_config).toMatchObject({
+      transcription_engine: "Telnyx",
+      language: "en",
+      transcription_model: "openai/whisper-large-v3-turbo",
+    })
+    expect(typeof body.command_id).toBe("string")
   })
 })
