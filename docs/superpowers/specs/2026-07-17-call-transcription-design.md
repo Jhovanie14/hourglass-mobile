@@ -162,7 +162,7 @@ conversation goes live
                                             [skipped if CALL_TRANSCRIPTION_ENABLED="false"]
 Telnyx transcribes both tracks during the call
   → call.transcription events → voice webhook
-     → segmentFromEvent(direction, payload) → null? drop
+     → segmentFromEvent(direction, payload, occurred_at) → null? drop
      → insert call_transcript_segments (speaker via speakerForTrack)
      → calls.has_transcript = true (first segment)
 call hangs up → Telnyx stops transcription automatically
