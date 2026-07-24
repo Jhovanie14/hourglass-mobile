@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   IDLE_STATE,
   isPanelEvent,
@@ -12,6 +13,7 @@ import type { PhoneNumber } from "@/types/calls"
 import { send } from "./panel-send"
 import { PanelTabs, type PanelTab } from "./panel-tabs"
 import { DialpadTab } from "./tabs/dialpad-tab"
+import { MessagesTab } from "./tabs/messages-tab"
 import { RecentTab } from "./tabs/recent-tab"
 import { SettingsTab } from "./tabs/settings-tab"
 
@@ -33,10 +35,14 @@ function useRemoteDuration(startedAt: number | null): string {
  * inputs, and the call overlays; tabs render inside.
  */
 export function RemotePhone({
+  supabase,
   phoneNumbers,
   accessToken,
   onSignOut,
 }: {
+  /** The panel's authenticated client — reused so Messages shares one session
+   *  and one Realtime connection rather than opening a second. */
+  supabase: SupabaseClient
   phoneNumbers: PhoneNumber[]
   accessToken: string | undefined
   onSignOut: () => void
@@ -46,6 +52,7 @@ export function RemotePhone({
   const [to, setTo] = useState("")
   const [phoneNumberId, setPhoneNumberId] = useState("")
   const [speakText, setSpeakText] = useState("")
+  const [messagesUnread, setMessagesUnread] = useState(0)
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -81,7 +88,11 @@ export function RemotePhone({
         />
       </div>
 
-      <PanelTabs active={tab} onChange={setTab} />
+      <PanelTabs
+        active={tab}
+        onChange={setTab}
+        badges={{ messages: messagesUnread }}
+      />
 
       <div className="flex-1 overflow-y-auto">
         {tab === "dialpad" && (
@@ -100,6 +111,14 @@ export function RemotePhone({
             phoneNumbers={phoneNumbers}
             state={state}
             onCallback={handleCallback}
+          />
+        )}
+        {tab === "messages" && (
+          <MessagesTab
+            supabase={supabase}
+            phoneNumbers={phoneNumbers}
+            accessToken={accessToken}
+            onUnreadChange={setMessagesUnread}
           />
         )}
         {tab === "settings" && (
