@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/auth"
+import { getRequestUserId } from "@/lib/auth"
 import { createAdminClient } from "@/lib/admin"
 
 export const runtime = "nodejs"
@@ -10,8 +10,11 @@ const BROWSER_TTL_SECONDS = 60
 const MOBILE_TTL_SECONDS = 600
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser()
-  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 })
+  // getRequestUserId, not getCurrentUser: the latter only reads the cookie
+  // session, so every request from the mobile app — which authenticates with
+  // an Authorization: Bearer header and sends no cookies — would 401.
+  const userId = await getRequestUserId(req)
+  if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   // The mobile app can't follow the redirect: native players forward the
   // Authorization header to the redirect target, and Supabase Storage would
