@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/server"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 /**
  * Returns the current user's claims, or null if not signed in.
@@ -59,6 +60,36 @@ export async function getRequestUserId(req: Request): Promise<string | null> {
   const { data, error } = await supabase.auth.getUser(token)
   if (error || !data.user) return null
   return data.user.id
+}
+
+/**
+ * A Supabase client scoped to the requesting user, so RLS applies to whatever
+ * it does. Cookie session when present (the web app), otherwise the Bearer
+ * token (the extension panel, which has no cross-site cookies in its iframe).
+ *
+ * Mutations that rely on RLS for authorization — deletes especially — MUST use
+ * this rather than createAdminClient(), which bypasses policies entirely.
+ */
+export async function createRequestScopedClient(
+  req: Request
+): Promise<SupabaseClient | null> {
+  // 1. Cookie-based session (the web app).
+  const claims = await getCurrentUser()
+  if (claims?.sub) return (await createClient()) as unknown as SupabaseClient
+
+  // 2. Bearer access token (the extension panel). Passing it as a global header
+  // makes Postgres evaluate policies as that user rather than anon.
+  const authHeader = req.headers.get("authorization") ?? ""
+  const token = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : null
+  if (!token) return null
+
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
 }
 
 /**
