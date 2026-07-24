@@ -1799,25 +1799,20 @@ git commit -m "feat: Messages tab with thread, compose, and delete in the call p
 
 ---
 
-### Task 9: Widget height and end-to-end verification
+### Task 9: End-to-end verification
+
+> **Step 1 (widget resize) was dropped during execution.** The Messages tab
+> lives in the toolbar popup (`popup.html`, 360×560), not the floating widget
+> (`call-widget.html`, 340×220) — the widget is `WidgetPhone`, an in-call
+> overlay that renders `null` when idle and has no tabs. Resizing it would do
+> nothing for Messages. See the correction at the top of the spec.
 
 **Files:**
-- Modify: `extension/content-widget.js:20-21`
+- None. Verification only.
 
 **Interfaces:**
 - Consumes: everything above
 - Produces: nothing
-
-- [ ] **Step 1: Grow the widget**
-
-In `extension/content-widget.js`, change the height in the style list:
-
-```js
-    "width:340px",
-    "height:360px",
-```
-
-At 220px a thread showed roughly 3 messages; 360px shows about 7, and the list about 7 rows instead of 3.
 
 - [ ] **Step 2: Build and verify the web side**
 
@@ -1826,7 +1821,7 @@ Expected: `✓ Compiled successfully`.
 
 - [ ] **Step 3: Load the extension and verify end to end**
 
-Run `npm run dev`, then load `extension/` as an unpacked extension at `chrome://extensions` (Developer mode → Load unpacked). Open any page, sign in to the panel, and confirm:
+Run `npm run dev`, then load `extension/` as an unpacked extension at `chrome://extensions` (Developer mode → Load unpacked). **Click the extension's toolbar icon** to open the popup — that is the surface with the tabs. Sign in, and confirm:
 
 1. A **Messages** tab sits between Recent and Settings.
 2. The tab shows an unread badge matching the number of conversations with unread messages.

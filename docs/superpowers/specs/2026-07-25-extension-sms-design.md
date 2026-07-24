@@ -1,7 +1,35 @@
 # SMS in the Chrome Extension — Design Spec
 
-> Status: draft for review · 2026-07-25 · single repo (`hourglass-mobile`,
-> the Next.js web app + Chrome extension).
+> Status: implemented, with one correction below · 2026-07-25 · single repo
+> (`hourglass-mobile`, the Next.js web app + Chrome extension).
+
+## Correction — where the tabs actually live
+
+**This spec originally placed the Messages tab in the 340×220 floating widget.
+That was wrong**, and the sections below still describe that constraint. The
+extension has five distinct surfaces:
+
+| File | `?mode=` | Component | What it is |
+|---|---|---|---|
+| `popup.html` | `remote` | `RemotePhone` | **The toolbar popup — where PanelTabs lives.** 360×560 |
+| `setup.html` | `remote` | `RemotePhone` | Setup page, same tabbed UI |
+| `call-widget.html` | `widget` | `WidgetPhone` | Floating in-call overlay, 340×220 |
+| `call-window.html` | `call` | `CallWindowPhone` | Popped-out call window |
+| `offscreen.html` | `background` | `BackgroundPhone` | Headless SIP registration |
+
+`PanelTabs` is rendered by `remote-phone.tsx`, not `panel-app.tsx`. And
+`widget-phone.tsx` returns `null` when the call state is idle — it is a call
+overlay, not a container for tabs, so a Messages tab could never have lived
+there.
+
+**What changed as a result:** the Messages tab is mounted in `remote-phone.tsx`
+(the popup), still beside Recent as specified. The widget resize to 340×360 was
+dropped — it would only have stretched the in-call overlay. The popup is
+already 360×560, which is roomier than the size that section argues for, so the
+"one real constraint" analysis below is moot in practice.
+
+Everything else in this spec — the shared hook, the API-route migration, the
+RLS-scoped client, the Realtime DELETE fix — was implemented as written.
 
 ## Context — what already exists
 
