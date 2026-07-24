@@ -37,7 +37,6 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import {
-  deleteMessage,
   resendMessage,
   setContactOptOut,
 } from "@/app/dashboard/conversations/actions"
@@ -107,9 +106,11 @@ export function ChatView({
     if (nearBottom) setShowJump(false)
   }
 
-  async function handleDelete(id: string) {
+  // Deletion is owned by the parent (useConversations → DELETE /api/messages/[id]).
+  // ChatView used to call the deleteMessage server action itself; doing both
+  // would fire two deletes, the second failing and rolling the UI back.
+  function handleDelete(id: string) {
     onDeleteMessage?.(id)
-    await deleteMessage(id)
   }
 
   async function handleResend(message: Message) {
