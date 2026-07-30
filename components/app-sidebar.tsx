@@ -47,8 +47,16 @@ export async function AppSidebar() {
 
       <SidebarSeparator className="mx-0 bg-sidebar-border group-data-[collapsible=icon]:hidden" />
       {/* Footer */}
+      {/* Rendered only when there is a real user. The layout gates access with
+          getClaims(), which decodes the JWT locally and still succeeds from a
+          stale token; getUser() re-validates against the auth server and can
+          disagree. `user!.email!` turned that disagreement into a 500 for every
+          /dashboard route. Redirecting here instead would loop, because the
+          proxy bounces "authenticated" callers off /auth/login — see
+          lib/middleware.ts:60. Degrading is the only non-looping option until
+          the two checks are reconciled. */}
       <SidebarFooter>
-        <UserMenu email={user!.email!} />
+        {user && <UserMenu email={user.email ?? ""} />}
       </SidebarFooter>
     </Sidebar>
   )
