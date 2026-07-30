@@ -18,8 +18,15 @@ export async function DELETE(
   if (!supabase) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   const { id } = await params
-  const { error } = await supabase.from("conversations").delete().eq("id", id)
+  // `.select()` returns the rows actually removed — see the sibling message
+  // route: without it an RLS-blocked delete looks identical to a successful one.
+  const { data, error } = await supabase
+    .from("conversations")
+    .delete()
+    .eq("id", id)
+    .select("id")
   if (error) return Response.json({ error: error.message }, { status: 422 })
+  if (!data?.length) return Response.json({ error: "Conversation not found." }, { status: 404 })
 
   return Response.json({ ok: true })
 }

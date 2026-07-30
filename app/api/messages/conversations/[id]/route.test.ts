@@ -9,11 +9,15 @@ const params = Promise.resolve({ id: "conv-1" })
 const req = () =>
   new Request("http://test/api/messages/conversations/conv-1", { method: "DELETE" })
 
-function clientReturning(error: { message: string } | null) {
-  const eq = vi.fn().mockResolvedValue({ error })
+/** Models `.delete().eq(...).select(...)`, which resolves to the rows actually
+ *  removed. An RLS-blocked delete resolves to `[]` with NO error — the case
+ *  that previously reported success and let the conversation reappear. */
+function clientReturning(result: { data: { id: string }[] | null; error?: { message: string } }) {
+  const select = vi.fn().mockResolvedValue({ data: result.data, error: result.error ?? null })
+  const eq = vi.fn(() => ({ select }))
   const del = vi.fn(() => ({ eq }))
   const from = vi.fn(() => ({ delete: del }))
-  return { client: { from }, from, del, eq }
+  return { client: { from }, from, del, eq, select }
 }
 
 describe("DELETE /api/messages/conversations/[id]", () => {
@@ -25,7 +29,7 @@ describe("DELETE /api/messages/conversations/[id]", () => {
   })
 
   it("deletes the conversation through the caller's own client, so RLS applies", async () => {
-    const { client, from, eq } = clientReturning(null)
+    const { client, from, eq } = clientReturning({ data: [{ id: "conv-1" }] })
     vi.mocked(createRequestScopedClient).mockResolvedValue(client as never)
 
     const res = await DELETE(req(), { params })
@@ -36,8 +40,18 @@ describe("DELETE /api/messages/conversations/[id]", () => {
     expect(eq).toHaveBeenCalledWith("id", "conv-1")
   })
 
+  it("404s when RLS removed no rows, instead of reporting a delete that did not happen", async () => {
+    const { client } = clientReturning({ data: [] })
+    vi.mocked(createRequestScopedClient).mockResolvedValue(client as never)
+
+    const res = await DELETE(req(), { params })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: "Conversation not found." })
+  })
+
   it("422s and surfaces the error when the delete is rejected", async () => {
-    const { client } = clientReturning({ message: "row-level security" })
+    const { client } = clientReturning({ data: null, error: { message: "row-level security" } })
     vi.mocked(createRequestScopedClient).mockResolvedValue(client as never)
 
     const res = await DELETE(req(), { params })
