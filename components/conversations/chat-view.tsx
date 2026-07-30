@@ -163,7 +163,11 @@ export function ChatView({
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
+    // min-h-0 is load-bearing: as a column flex item this defaults to
+    // min-height:auto and refuses to shrink below its content, so the thread
+    // scroller below ends up taller than the column and never scrolls — the
+    // page scrolls instead, dragging the conversation list off screen.
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="min-w-0">

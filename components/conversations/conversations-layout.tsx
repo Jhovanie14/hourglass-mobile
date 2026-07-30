@@ -86,8 +86,15 @@ export function ConversationsLayout({
       </div>
 
       {/* Column 3 — chat view */}
-      <div className={cn("min-w-0 flex-1", !selected && "hidden sm:flex")}>
-        <div className="flex h-full w-full flex-col">
+      {/* min-h-0 matters: without it this column refuses to shrink below its
+          content, so a long thread grows the flex row and squeezes column 2. */}
+      <div
+        className={cn(
+          "min-h-0 min-w-0 flex-1",
+          selected ? "flex" : "hidden sm:flex"
+        )}
+      >
+        <div className="flex h-full min-h-0 w-full flex-col">
           {/* Mobile back bar */}
           {selected && (
             <button
