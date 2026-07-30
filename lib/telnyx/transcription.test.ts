@@ -3,6 +3,8 @@ import {
   isTranscriptionEnabled,
   speakerForTrack,
   segmentFromEvent,
+  transcriptionMode,
+  transcriptionStartBody,
 } from "./transcription"
 
 describe("isTranscriptionEnabled", () => {
@@ -96,5 +98,50 @@ describe("segmentFromEvent", () => {
     const row = segmentFromEvent("inbound", { transcript: "hello" }, undefined)
     expect(typeof row?.occurred_at).toBe("string")
     expect(Number.isNaN(Date.parse(row!.occurred_at))).toBe(false)
+  })
+})
+
+describe("transcriptionMode", () => {
+  it("defaults to the production config when the env var is unset", () => {
+    expect(transcriptionMode({})).toBe("default")
+  })
+  it("reads the two diagnostic modes", () => {
+    expect(transcriptionMode({ CALL_TRANSCRIPTION_MODE: "telnyx-single" })).toBe("telnyx-single")
+    expect(transcriptionMode({ CALL_TRANSCRIPTION_MODE: "minimal" })).toBe("minimal")
+  })
+  it("falls back to default for unknown values (a typo must not change behaviour)", () => {
+    expect(transcriptionMode({ CALL_TRANSCRIPTION_MODE: "" })).toBe("default")
+    expect(transcriptionMode({ CALL_TRANSCRIPTION_MODE: "Minimal" })).toBe("default")
+    expect(transcriptionMode({ CALL_TRANSCRIPTION_MODE: "whatever" })).toBe("default")
+  })
+})
+
+describe("transcriptionStartBody", () => {
+  it("default: Telnyx engine, whisper config, both tracks (today's production body)", () => {
+    expect(transcriptionStartBody("default")).toEqual({
+      transcription_engine: "Telnyx",
+      transcription_engine_config: {
+        transcription_engine: "Telnyx",
+        language: "en",
+        transcription_model: "openai/whisper-large-v3-turbo",
+      },
+      transcription_tracks: "both",
+    })
+  })
+
+  it("telnyx-single: same engine and config, single track (isolates `both`)", () => {
+    const body = transcriptionStartBody("telnyx-single")
+    expect(body.transcription_engine).toBe("Telnyx")
+    expect(body.transcription_engine_config).toMatchObject({
+      transcription_model: "openai/whisper-large-v3-turbo",
+    })
+    expect(body.transcription_tracks).toBe("inbound")
+  })
+
+  it("minimal: no engine and no config, so Telnyx picks its own default", () => {
+    const body = transcriptionStartBody("minimal")
+    expect(body).toEqual({ transcription_tracks: "inbound" })
+    expect("transcription_engine" in body).toBe(false)
+    expect("transcription_engine_config" in body).toBe(false)
   })
 })

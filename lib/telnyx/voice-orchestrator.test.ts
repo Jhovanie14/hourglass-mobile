@@ -21,6 +21,7 @@ beforeEach(() => {
   hangup.mockReset()
   startTranscription.mockReset()
   process.env.TELNYX_VOICE_APP_ID = "app-1"
+  delete process.env.CALL_TRANSCRIPTION_MODE
 })
 
 describe("dialAgentLeg", () => {
@@ -75,5 +76,29 @@ describe("startCallTranscription", () => {
       transcription_model: "openai/whisper-large-v3-turbo",
     })
     expect(typeof body.command_id).toBe("string")
+  })
+
+  it("honours the temporary CALL_TRANSCRIPTION_MODE bisect flag", async () => {
+    startTranscription.mockResolvedValue({})
+    process.env.CALL_TRANSCRIPTION_MODE = "minimal"
+
+    await startCallTranscription("a-leg-9")
+
+    const [, body] = startTranscription.mock.calls[0]
+    expect(body.transcription_engine).toBeUndefined()
+    expect(body.transcription_engine_config).toBeUndefined()
+    expect(body.transcription_tracks).toBe("inbound")
+    expect(typeof body.command_id).toBe("string")
+  })
+
+  it("isolates the `both` track suspect without dropping the engine config", async () => {
+    startTranscription.mockResolvedValue({})
+    process.env.CALL_TRANSCRIPTION_MODE = "telnyx-single"
+
+    await startCallTranscription("a-leg-9")
+
+    const [, body] = startTranscription.mock.calls[0]
+    expect(body.transcription_engine).toBe("Telnyx")
+    expect(body.transcription_tracks).toBe("inbound")
   })
 })

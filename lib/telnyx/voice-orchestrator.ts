@@ -1,6 +1,7 @@
 import crypto from "crypto"
 import { getTelnyxClient, withRetry } from "./client"
 import { encodeClientState } from "./client-state"
+import { transcriptionMode, transcriptionStartBody } from "./transcription"
 
 export const DEFAULT_GREETING =
   "Hi, you've reached our team. We're currently unavailable. Please leave a message after the tone."
@@ -102,19 +103,21 @@ export async function startVoicemail(aLegId: string, greeting: string): Promise<
 
 /** Start real-time transcription on a live call leg — both tracks, Telnyx
  *  engine (the client-approved $0.025/min option, and the only engine that
- *  labels which track spoke). Telnyx stops it automatically at hang-up. */
+ *  labels which track spoke). Telnyx stops it automatically at hang-up.
+ *  The body varies by CALL_TRANSCRIPTION_MODE — a temporary bisect flag; see
+ *  transcriptionStartBody. Unset behaves exactly as before. */
 export async function startCallTranscription(callControlId: string): Promise<void> {
   const telnyx = getTelnyxClient()
+  // Same cast idiom the voice webhook uses for isTranscriptionEnabled: ProcessEnv's
+  // index signature does not structurally match a narrow named-key type.
+  const mode = transcriptionMode(process.env as Record<string, string | undefined>)
   await withRetry(() =>
     telnyx.calls.actions.startTranscription(callControlId, {
-      transcription_engine: "Telnyx",
-      transcription_engine_config: {
-        transcription_engine: "Telnyx",
-        language: "en",
-        transcription_model: "openai/whisper-large-v3-turbo",
-      },
-      transcription_tracks: "both",
+      ...transcriptionStartBody(mode),
       command_id: commandId(),
     })
   )
+  // Logged on SUCCESS too: the failure we are chasing is a command Telnyx
+  // accepts and then never acts on, which leaves no trace otherwise.
+  console.log(`🎧 Transcription start accepted (mode=${mode}) on ${callControlId}`)
 }
