@@ -3,6 +3,7 @@ import { formatRecentRow, type RecentCall } from "./recent-row"
 
 const base: RecentCall = {
   id: "1",
+  telnyx_call_id: "call-1",
   contact_number: "+15551230000",
   direction: "inbound",
   status: "completed",
@@ -58,5 +59,10 @@ describe("formatRecentRow", () => {
     const row = formatRecentRow({ ...base, contact_number: "" })
     expect(row.title).toBe("Unknown")
     expect(row.callbackTo).toBe("")
+  })
+  it("prefers the saved contact name for the title", () => {
+    const row = formatRecentRow({ ...base, contact_name: "Jane Doe" })
+    expect(row.title).toBe("Jane Doe")
+    expect(row.callbackTo).toBe("+15551230000")
   })
 })

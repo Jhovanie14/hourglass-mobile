@@ -3,7 +3,9 @@ import type { CallStatus } from "@/types/calls"
 
 export type RecentCall = {
   id: string
+  telnyx_call_id: string | null
   contact_number: string
+  contact_name?: string | null
   direction: "inbound" | "outbound"
   status: CallStatus
   started_at: string | null
@@ -55,7 +57,7 @@ export function formatRecentRow(call: RecentCall): RecentRowView {
     }
   }
   return {
-    title: call.contact_number || "Unknown",
+    title: call.contact_name || call.contact_number || "Unknown",
     missed: call.status === "missed",
     directionIcon: call.direction === "outbound" ? "out" : "in",
     lineLabel: call.phone_numbers?.label ?? null,
