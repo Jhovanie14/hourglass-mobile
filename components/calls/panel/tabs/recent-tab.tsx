@@ -1,10 +1,14 @@
 "use client"
 
-import { ArrowDownLeft, ArrowUpRight, Phone } from "lucide-react"
+import { useState } from "react"
+import { ArrowDownLeft, ArrowUpRight, Phone, StickyNote, UserPlus } from "lucide-react"
 import type { SerializedCallState } from "@/lib/panel-bus"
 import type { PhoneNumber } from "@/types/calls"
+import { NotesSheet } from "@/components/calls/notes-sheet"
+import { ContactSheet } from "@/components/calls/contact-sheet"
+import { useDispositions } from "@/components/calls/use-dispositions"
 import { send } from "../panel-send"
-import { formatRecentRow, type StatusTone } from "../recent-row"
+import { formatRecentRow, type RecentCall, type StatusTone } from "../recent-row"
 import { useRecentCalls } from "../use-recent-calls"
 
 const TONE_CLASS: Record<StatusTone, string> = {
@@ -27,6 +31,11 @@ export function RecentTab({
   onCallback: (to: string) => void
 }) {
   const { calls, loading, error, reload } = useRecentCalls(accessToken)
+  const [notesFor, setNotesFor] = useState<RecentCall | null>(null)
+  const [contactFor, setContactFor] = useState<RecentCall | null>(null)
+  const { map: dispoMap, setLocal } = useDispositions(
+    calls.map((c) => c.telnyx_call_id)
+  )
   const inCall = state.status !== "idle" && state.status !== "incoming"
   const canDial = state.isReady && !inCall
   const defaultCallerId = phoneNumbers[0]?.phone_number
@@ -55,7 +64,8 @@ export function RecentTab({
   }
 
   return (
-    <ul className="divide-y divide-neutral-900">
+    <>
+      <ul className="divide-y divide-neutral-900">
       {calls.map((call) => {
         const row = formatRecentRow(call)
         // Prefer the line the call came in on (multi-brand callback); fall back
@@ -109,9 +119,52 @@ export function RecentTab({
             >
               <Phone className="h-4 w-4" />
             </button>
+            <button
+              type="button"
+              aria-label="Notes"
+              disabled={!call.telnyx_call_id}
+              onClick={() => setNotesFor(call)}
+              className="rounded-full p-2 text-neutral-300 transition hover:bg-neutral-800 disabled:opacity-40"
+            >
+              <StickyNote className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Add contact"
+              onClick={() => setContactFor(call)}
+              className="rounded-full p-2 text-neutral-300 transition hover:bg-neutral-800"
+            >
+              <UserPlus className="h-4 w-4" />
+            </button>
           </li>
         )
       })}
-    </ul>
+      </ul>
+
+      {notesFor?.telnyx_call_id && (
+        <NotesSheet
+          open={!!notesFor}
+          onOpenChange={(o) => !o && setNotesFor(null)}
+          call={{
+            telnyxCallId: notesFor.telnyx_call_id,
+            contactNumber: notesFor.contact_number,
+            direction: notesFor.direction,
+          }}
+          existing={dispoMap[notesFor.telnyx_call_id] ?? null}
+          onSaved={(d) => setLocal(d)}
+        />
+      )}
+      {contactFor && (
+        <ContactSheet
+          open={!!contactFor}
+          onOpenChange={(o) => !o && setContactFor(null)}
+          contactNumber={contactFor.contact_number}
+          phoneNumbers={phoneNumbers}
+          existingName={contactFor.contact_name ?? null}
+          accessToken={accessToken}
+          onSaved={() => reload()}
+        />
+      )}
+    </>
   )
 }
