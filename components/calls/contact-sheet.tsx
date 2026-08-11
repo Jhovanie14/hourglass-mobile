@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   Sheet,
   SheetContent,
@@ -33,18 +33,14 @@ export function ContactSheet({
   accessToken?: string
   onSaved?: () => void
 }) {
-  const [name, setName] = useState("")
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Mounted fresh each open (parents render conditionally) → seed state from
+  // props once; no re-seed effect needed.
+  const [name, setName] = useState(existingName ?? "")
+  const [selectedId, setSelectedId] = useState<string | null>(
+    defaultPhoneNumberId ?? phoneNumbers[0]?.id ?? null
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setName(existingName ?? "")
-    setSelectedId(defaultPhoneNumberId ?? phoneNumbers[0]?.id ?? null)
-    setError(null)
-    setSaving(false)
-  }, [open, existingName, defaultPhoneNumberId, phoneNumbers])
 
   const canSave = Boolean(selectedId && name.trim()) && !saving
 

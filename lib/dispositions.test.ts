@@ -4,7 +4,9 @@ import { saveDisposition, fetchDispositionsForCalls } from "./dispositions"
 function upsertClient(result: { data: unknown; error: unknown }) {
   const single = vi.fn().mockResolvedValue(result)
   const select = vi.fn(() => ({ single }))
-  const upsert = vi.fn((_payload: unknown, _opts: unknown) => ({ select }))
+  const upsert = vi.fn<
+    (payload: Record<string, unknown>, opts: { onConflict: string }) => unknown
+  >(() => ({ select }))
   const from = vi.fn(() => ({ upsert }))
   return { client: { from } as never, upsert }
 }

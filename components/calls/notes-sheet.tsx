@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   Sheet,
   SheetContent,
@@ -35,22 +35,18 @@ export function NotesSheet({
   existing?: Disposition | null
   onSaved?: (d: Disposition) => void
 }) {
-  const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const [notes, setNotes] = useState("")
+  // The sheet is mounted fresh each time it opens (parents render it
+  // conditionally), so state is seeded once from props here — no re-seed effect.
+  const [outcome, setOutcome] = useState<Outcome | null>(
+    (existing?.outcome as Outcome) ?? null
+  )
+  const [notes, setNotes] = useState(existing?.notes ?? "")
   // null in edit mode = "leave the saved follow-up untouched"; "none" for new.
-  const [preset, setPreset] = useState<FollowUpPreset | null>(null)
+  const [preset, setPreset] = useState<FollowUpPreset | null>(
+    existing ? null : "none"
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Re-seed whenever the sheet opens for a (possibly different) call.
-  useEffect(() => {
-    if (!open) return
-    setOutcome((existing?.outcome as Outcome) ?? null)
-    setNotes(existing?.notes ?? "")
-    setPreset(existing ? null : "none")
-    setError(null)
-    setSaving(false)
-  }, [open, existing])
 
   async function handleSave() {
     if (!outcome || saving) return
