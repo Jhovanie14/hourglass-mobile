@@ -20,6 +20,7 @@ export type Call = {
   started_at: string | null
   ended_at: string | null
   created_at: string
+  contact_name?: string | null
   has_voicemail?: boolean
   has_transcript?: boolean
   phone_numbers?: {

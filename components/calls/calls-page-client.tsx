@@ -193,6 +193,7 @@ export function CallsPageClient({
         calls={pageCalls}
         statusFilter={filters.status}
         dateFilter={filters.dateRange}
+        phoneNumbers={phoneNumbers}
       />
 
       {/* Pagination */}

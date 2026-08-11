@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/server"
 import { CallsPageClient } from "@/components/calls/calls-page-client"
+import { buildContactNameMap } from "@/lib/contact-names"
 import type { Call, PhoneNumber } from "@/types/calls"
 
 export default async function CallsPage() {
@@ -40,7 +41,24 @@ export default async function CallsPage() {
       : c.phone_numbers,
   }))
 
+  // Merge saved contact names so rows show a name instead of the raw number.
+  // The contacts SELECT is allowed by its team-wide RLS read policy.
+  const numbers = Array.from(new Set(initialCalls.map((c) => c.contact_number)))
+  let nameMap: Record<string, string> = {}
+  if (numbers.length) {
+    const { data: contactRows } = await supabase
+      .from("contacts")
+      .select("contact_number, name, updated_at")
+      .in("contact_number", numbers)
+    nameMap = buildContactNameMap(contactRows ?? [])
+  }
+
+  const callsWithNames: Call[] = initialCalls.map((c) => ({
+    ...c,
+    contact_name: nameMap[c.contact_number] ?? null,
+  }))
+
   return (
-    <CallsPageClient phoneNumbers={phoneNumbers} initialCalls={initialCalls} />
+    <CallsPageClient phoneNumbers={phoneNumbers} initialCalls={callsWithNames} />
   )
 }

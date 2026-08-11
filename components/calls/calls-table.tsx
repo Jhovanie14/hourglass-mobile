@@ -10,6 +10,8 @@ import {
   Mic,
   Phone,
   PhoneMissed,
+  StickyNote,
+  UserPlus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -31,7 +33,11 @@ import { formatDuration } from "@/lib/format-duration"
 import { createClient } from "@/lib/client"
 import { useWebRTC } from "@/components/calls/webrtc-provider"
 import { TranscriptView } from "@/components/calls/transcript-view"
-import type { Call, StatusFilter, Voicemail } from "@/types/calls"
+import { NotesSheet } from "@/components/calls/notes-sheet"
+import { ContactSheet } from "@/components/calls/contact-sheet"
+import { useDispositions } from "@/components/calls/use-dispositions"
+import { outcomeLabel } from "@/lib/disposition-logic"
+import type { Call, PhoneNumber, StatusFilter, Voicemail } from "@/types/calls"
 
 const STATUS_STYLES: Record<string, string> = {
   answered: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
@@ -118,14 +124,21 @@ export function CallsTable({
   loading,
   statusFilter,
   dateFilter,
+  phoneNumbers,
 }: {
   calls: Call[]
   loading?: boolean
   statusFilter: StatusFilter
   dateFilter: string
+  phoneNumbers: PhoneNumber[]
 }) {
   const router = useRouter()
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [notesFor, setNotesFor] = useState<Call | null>(null)
+  const [contactFor, setContactFor] = useState<Call | null>(null)
+  const { map: dispoMap, setLocal } = useDispositions(
+    calls.map((c) => c.telnyx_call_id)
+  )
   const { makeCall, isReady } = useWebRTC()
 
   function goToSms(call: Call) {
@@ -222,8 +235,13 @@ export function CallsTable({
                     </TableCell>
                     <TableCell>
                       <div className="font-medium text-foreground">
-                        {call.contact_number}
+                        {call.contact_name ?? call.contact_number}
                       </div>
+                      {call.contact_name && (
+                        <div className="text-xs text-muted-foreground tabular-nums">
+                          {call.contact_number}
+                        </div>
+                      )}
                       {call.phone_numbers && (
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span
@@ -339,6 +357,42 @@ export function CallsTable({
                             />
                             <DetailRow label="Agent" value="—" />
                           </dl>
+
+                          {call.telnyx_call_id && dispoMap[call.telnyx_call_id] && (
+                            <div className="rounded-lg border border-border/60 bg-background/50 p-2 text-xs">
+                              <span className="font-medium text-foreground">
+                                {outcomeLabel(dispoMap[call.telnyx_call_id].outcome)}
+                              </span>
+                              {dispoMap[call.telnyx_call_id].notes && (
+                                <span className="text-muted-foreground">
+                                  {" · "}
+                                  {dispoMap[call.telnyx_call_id].notes}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={!call.telnyx_call_id}
+                              onClick={() => setNotesFor(call)}
+                            >
+                              <StickyNote className="h-4 w-4" />
+                              {call.telnyx_call_id && dispoMap[call.telnyx_call_id]
+                                ? "Edit notes"
+                                : "Notes"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setContactFor(call)}
+                            >
+                              <UserPlus className="h-4 w-4" />
+                              {call.contact_name ? "Edit contact" : "Add contact"}
+                            </Button>
+                          </div>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -367,8 +421,13 @@ export function CallsTable({
                   <DirectionIcon direction={call.direction} />
                   <div>
                     <p className="font-medium text-foreground">
-                      {call.contact_number}
+                      {call.contact_name ?? call.contact_number}
                     </p>
+                    {call.contact_name && (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {call.contact_number}
+                      </p>
+                    )}
                     {call.phone_numbers && (
                       <span
                         className="mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
@@ -426,6 +485,31 @@ export function CallsTable({
           )
         })}
       </div>
+
+      {notesFor?.telnyx_call_id && (
+        <NotesSheet
+          open={!!notesFor}
+          onOpenChange={(o) => !o && setNotesFor(null)}
+          call={{
+            telnyxCallId: notesFor.telnyx_call_id,
+            contactNumber: notesFor.contact_number,
+            direction: notesFor.direction,
+          }}
+          existing={dispoMap[notesFor.telnyx_call_id] ?? null}
+          onSaved={(d) => setLocal(d)}
+        />
+      )}
+      {contactFor && (
+        <ContactSheet
+          open={!!contactFor}
+          onOpenChange={(o) => !o && setContactFor(null)}
+          contactNumber={contactFor.contact_number}
+          phoneNumbers={phoneNumbers}
+          defaultPhoneNumberId={contactFor.phone_number_id}
+          existingName={contactFor.contact_name ?? null}
+          onSaved={() => router.refresh()}
+        />
+      )}
     </>
   )
 }
