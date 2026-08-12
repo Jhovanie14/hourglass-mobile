@@ -23,6 +23,9 @@ export type Call = {
   contact_name?: string | null
   has_voicemail?: boolean
   has_transcript?: boolean
+  ai_handled?: boolean
+  ai_conversation_id?: string | null
+  ai_recording_path?: string | null
   phone_numbers?: {
     id: string
     label: string

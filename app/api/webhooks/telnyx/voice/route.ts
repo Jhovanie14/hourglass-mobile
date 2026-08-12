@@ -10,8 +10,23 @@ import {
   bridgeLegs,
   startVoicemail,
   startCallTranscription,
+  startAIAssistantOnCall,
+  startAICallRecording,
   DEFAULT_GREETING,
 } from "@/lib/telnyx/voice-orchestrator"
+import {
+  aiAgentSettings,
+  isAIAgentLabel,
+  conversationMessagesToSegments,
+  type ConversationMessage,
+} from "@/lib/telnyx/ai-agent"
+import {
+  slackWebhookForLabel,
+  buildAICallMessage,
+  buildAIRecordingMessage,
+  buildAISummaryMessage,
+  postToSlack,
+} from "@/lib/slack"
 import {
   isTranscriptionEnabled,
   segmentFromEvent,
@@ -55,6 +70,11 @@ type TelnyxCallPayload = {
   duration_ms?: number
   // call.transcription fields
   transcription_data?: TranscriptionData
+  // call.conversation.ended / call.conversation_insights.generated fields
+  conversation_id?: string
+  duration_sec?: number
+  reason?: string | null
+  results?: Array<{ insight_id?: string; result?: unknown }>
 }
 
 type TelnyxVoiceWebhookBody = {
@@ -109,6 +129,12 @@ export async function POST(req: Request) {
     case "call.transcription":
       await handleTranscription(supabase, payload, body.data.occurred_at)
       break
+    case "call.conversation.ended":
+      await handleConversationEnded(supabase, payload, body.data.occurred_at)
+      break
+    case "call.conversation_insights.generated":
+      await handleConversationInsights(supabase, payload)
+      break
     default:
       console.log("ℹ️ Ignoring voice event:", event_type)
   }
@@ -156,13 +182,40 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
   // answered only when an agent wins (to bridge) or when we fall to voicemail.
   const { data: phoneNumber } = await supabase
     .from("phone_numbers")
-    .select("id")
+    .select("id, label")
     .eq("phone_number", payload.to)
     .eq("is_active", true)
     .maybeSingle()
 
   if (!phoneNumber) {
     console.warn("⚠️ No active phone number matches:", payload.to)
+    return
+  }
+
+  // AI voice agent (TLP test): flagged brands are answered by the Telnyx AI
+  // assistant instead of ringing agents. Fully dormant unless configured.
+  const aiSettings = aiAgentSettings(process.env as Record<string, string | undefined>)
+  if (isAIAgentLabel(aiSettings, phoneNumber.label)) {
+    const { error: aiUpsertError } = await supabase.from("calls").upsert(
+      {
+        phone_number_id: phoneNumber.id,
+        contact_number: payload.from,
+        direction: "inbound",
+        status: "ringing",
+        telnyx_call_id: payload.call_control_id,
+        ai_handled: true,
+      },
+      { onConflict: "telnyx_call_id", ignoreDuplicates: true }
+    )
+    if (aiUpsertError) {
+      console.error("⚠️ Failed to upsert AI-handled call row:", aiUpsertError)
+      return
+    }
+    try {
+      await answerCaller(payload.call_control_id)
+    } catch (err) {
+      console.error("⚠️ Failed to answer caller for AI agent:", err)
+    }
     return
   }
 
@@ -283,12 +336,16 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
   // so we read it (and the status) from the stored call row to decide what to do.
   const { data: call } = await supabase
     .from("calls")
-    .select("id, status, direction, phone_numbers(voicemail_greeting)")
+    .select("id, status, direction, ai_handled, phone_numbers(voicemail_greeting, label)")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
   if (!call) return
 
-  const action = answeredAction(call)
+  const action = answeredAction({
+    direction: call.direction,
+    status: call.status,
+    aiHandled: call.ai_handled === true,
+  })
 
   // Outbound (softphone-originated) call connected → mark answered so hangup
   // finalizes it as `completed` (not `failed`).
@@ -301,6 +358,45 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
         console.error("⚠️ Failed to start transcription (outbound):", err)
       }
     }
+    return
+  }
+
+  if (action === "start_ai") {
+    const aiSettings = aiAgentSettings(process.env as Record<string, string | undefined>)
+    const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
+    const brandLabel = (pn as { label?: string } | null)?.label ?? "Unknown"
+
+    if (aiSettings) {
+      try {
+        await startAIAssistantOnCall({
+          callControlId: payload.call_control_id,
+          assistantId: aiSettings.assistantId,
+          brandLabel,
+        })
+        await supabase
+          .from("calls")
+          .update({ status: "answered", started_at: new Date().toISOString() })
+          .eq("id", call.id)
+        try {
+          await startAICallRecording(payload.call_control_id)
+        } catch (err) {
+          console.error("⚠️ Failed to start AI call recording (call continues):", err)
+        }
+        return
+      } catch (err) {
+        console.error("⚠️ Failed to start AI assistant; falling back to voicemail:", err)
+      }
+    } else {
+      console.error("⚠️ AI call answered but assistant config is gone; voicemail fallback")
+    }
+
+    // Fallback: clear the AI flag so recording.saved treats this as a normal
+    // voicemail, then run the standard greeting flow on the answered leg.
+    await supabase
+      .from("calls")
+      .update({ status: "voicemail", ai_handled: false })
+      .eq("id", call.id)
+    await speakGreeting(payload.call_control_id, call)
     return
   }
 
@@ -475,7 +571,9 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
 
   const { data: call } = await supabase
     .from("calls")
-    .select("id, contact_number, phone_number_id, has_voicemail, phone_numbers(label)")
+    .select(
+      "id, contact_number, phone_number_id, has_voicemail, ai_handled, ai_recording_path, phone_numbers(label)"
+    )
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
 
@@ -483,6 +581,13 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
     console.warn("⚠️ No call found for recording:", payload.call_control_id)
     return
   }
+
+  // AI-handled calls store their recording separately — never as a voicemail.
+  if (call.ai_handled) {
+    await handleAIRecordingSaved(supabase, call, recordingUrl, durationMs)
+    return
+  }
+
   if (call.has_voicemail) return // idempotency: already processed
 
   // Copy the MP3 into the private bucket; fall back to the Telnyx URL on failure
@@ -548,6 +653,198 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
   console.log(
     `📬 Voicemail saved for call ${call.id}, duration: ${Math.round(durationMs / 1000)}s`
   )
+}
+
+const AI_RECORDING_LINK_DAYS = 7
+
+/** Recording of an AI-handled call: copy to the private call-recordings
+ *  bucket, remember the path, and post a Slack message with a signed link. */
+async function handleAIRecordingSaved(
+  supabase: SupabaseClient,
+  call: {
+    id: string
+    contact_number: string
+    ai_recording_path?: string | null
+    phone_numbers?: unknown
+  },
+  recordingUrl: string,
+  durationMs: number
+) {
+  if (call.ai_recording_path) return // idempotency: Telnyx webhook retry
+
+  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
+  const brandLabel = (pn as { label: string } | null)?.label ?? "Unknown"
+
+  // Copy into the private bucket; fall back to the (time-limited) Telnyx URL
+  // so the audio link is never lost. Same pattern as voicemails.
+  let audioUrl = recordingUrl
+  try {
+    const res = await fetch(recordingUrl)
+    if (!res.ok) throw new Error(`download failed: ${res.status}`)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const path = `${call.id}.mp3`
+    const { error: upErr } = await supabase.storage
+      .from("call-recordings")
+      .upload(path, bytes, { contentType: "audio/mpeg", upsert: true })
+    if (upErr) throw upErr
+
+    const { error: updErr } = await supabase
+      .from("calls")
+      .update({ ai_recording_path: path })
+      .eq("id", call.id)
+    if (updErr) console.error("⚠️ Failed to store ai_recording_path:", updErr)
+
+    const { data: signed, error: signErr } = await supabase.storage
+      .from("call-recordings")
+      .createSignedUrl(path, 60 * 60 * 24 * AI_RECORDING_LINK_DAYS)
+    if (signErr || !signed?.signedUrl) {
+      console.error("⚠️ Failed to sign AI recording URL; using Telnyx URL:", signErr)
+    } else {
+      audioUrl = signed.signedUrl
+    }
+  } catch (err) {
+    console.error("⚠️ Failed to copy AI recording to bucket; keeping Telnyx URL:", err)
+  }
+
+  const webhook = slackWebhookForLabel(
+    brandLabel,
+    process.env as Record<string, string | undefined>
+  )
+  if (!webhook) return
+  try {
+    await postToSlack(
+      webhook,
+      buildAIRecordingMessage({
+        brandLabel,
+        caller: call.contact_number,
+        url: audioUrl,
+        expiresInDays: AI_RECORDING_LINK_DAYS,
+      })
+    )
+    console.log(
+      `🎙 AI recording posted to Slack for call ${call.id} (${Math.round(durationMs / 1000)}s)`
+    )
+  } catch (err) {
+    console.error("⚠️ Failed to post AI recording to Slack:", err)
+  }
+}
+
+/** The AI conversation finished: fetch its message history (the transcript),
+ *  store it as dashboard transcript segments, and post it to Slack. The
+ *  broken real-time call.transcription pipeline is deliberately not involved
+ *  — see docs/superpowers/specs/2026-08-13-tlp-ai-voice-slack-design.md. */
+async function handleConversationEnded(
+  supabase: SupabaseClient,
+  payload: TelnyxCallPayload,
+  occurredAt: string | undefined
+) {
+  const { data: call } = await supabase
+    .from("calls")
+    .select("id, contact_number, ai_handled, ai_conversation_id, phone_numbers(label)")
+    .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
+  if (!call?.ai_handled) return // not an AI-handled call — nothing to do
+  if (call.ai_conversation_id) return // idempotency: Telnyx webhook retry
+
+  const conversationId = payload.conversation_id
+  if (!conversationId) {
+    console.warn("⚠️ call.conversation.ended without conversation_id:", payload.call_control_id)
+    return
+  }
+
+  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
+  const brandLabel = (pn as { label: string } | null)?.label ?? "Unknown"
+
+  const messages: ConversationMessage[] = []
+  try {
+    const { getTelnyxClient } = await import("@/lib/telnyx/client")
+    for await (const message of getTelnyxClient().ai.conversations.messages.list(
+      conversationId
+    )) {
+      messages.push(message as ConversationMessage)
+    }
+  } catch (err) {
+    console.error(
+      `⚠️ Failed to fetch AI conversation ${conversationId} (transcript lost unless replayed manually):`,
+      err
+    )
+  }
+
+  const segments = conversationMessagesToSegments(messages, occurredAt ?? new Date().toISOString())
+
+  if (segments.length > 0) {
+    const { error } = await supabase
+      .from("call_transcript_segments")
+      .insert(segments.map((segment) => ({ call_id: call.id, ...segment })))
+    if (error) console.error("⚠️ Failed to insert AI transcript segments:", error)
+  }
+
+  // Mark processed even when empty so a webhook retry can't double-post Slack.
+  const { error: markError } = await supabase
+    .from("calls")
+    .update({
+      ai_conversation_id: conversationId,
+      ...(segments.length > 0 && { has_transcript: true }),
+    })
+    .eq("id", call.id)
+  if (markError) console.error("⚠️ Failed to mark AI conversation processed:", markError)
+
+  const env = process.env as Record<string, string | undefined>
+  const webhook = slackWebhookForLabel(brandLabel, env)
+  if (!webhook) {
+    console.warn("⚠️ AI call finished but no Slack webhook is configured")
+    return
+  }
+  const base = env.APP_BASE_URL?.replace(/\/+$/, "")
+  try {
+    await postToSlack(
+      webhook,
+      buildAICallMessage({
+        brandLabel,
+        caller: call.contact_number,
+        durationSec: payload.duration_sec ?? null,
+        endedReason: payload.reason ?? null,
+        segments,
+        dashboardUrl: base ? `${base}/dashboard/calls` : null,
+      })
+    )
+    console.log(
+      `💬 AI transcript posted to Slack for call ${call.id} (${segments.length} segments)`
+    )
+  } catch (err) {
+    console.error("⚠️ Failed to post AI transcript to Slack:", err)
+  }
+}
+
+/** Post-call insights (summary etc.) — only fires when insights are
+ *  configured on the assistant in the Telnyx portal. */
+async function handleConversationInsights(supabase: SupabaseClient, payload: TelnyxCallPayload) {
+  const results = payload.results
+  if (!results || results.length === 0) return
+
+  const { data: call } = await supabase
+    .from("calls")
+    .select("id, contact_number, ai_handled, phone_numbers(label)")
+    .eq("telnyx_call_id", payload.call_control_id)
+    .maybeSingle()
+  if (!call?.ai_handled) return
+
+  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
+  const brandLabel = (pn as { label: string } | null)?.label ?? "Unknown"
+
+  const webhook = slackWebhookForLabel(
+    brandLabel,
+    process.env as Record<string, string | undefined>
+  )
+  if (!webhook) return
+  try {
+    await postToSlack(
+      webhook,
+      buildAISummaryMessage({ brandLabel, caller: call.contact_number, results })
+    )
+  } catch (err) {
+    console.error("⚠️ Failed to post AI summary to Slack:", err)
+  }
 }
 
 async function handleTranscription(
