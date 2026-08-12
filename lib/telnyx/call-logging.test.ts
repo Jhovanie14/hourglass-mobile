@@ -67,6 +67,32 @@ describe("answeredAction", () => {
   })
 })
 
+describe("answeredAction — AI-handled calls", () => {
+  it("starts the AI on a ringing inbound AI call", () => {
+    expect(
+      answeredAction({ direction: "inbound", status: "ringing", aiHandled: true })
+    ).toBe("start_ai")
+  })
+
+  it("noops on any non-ringing AI call (duplicate answered events)", () => {
+    expect(
+      answeredAction({ direction: "inbound", status: "answered", aiHandled: true })
+    ).toBe("noop")
+    expect(
+      answeredAction({ direction: "inbound", status: "voicemail", aiHandled: true })
+    ).toBe("noop")
+  })
+
+  it("keeps outbound and non-AI behavior unchanged", () => {
+    expect(
+      answeredAction({ direction: "outbound", status: "initiated", aiHandled: true })
+    ).toBe("mark_outbound_answered")
+    expect(
+      answeredAction({ direction: "inbound", status: "voicemail", aiHandled: false })
+    ).toBe("voicemail")
+  })
+})
+
 describe("markOutboundAnswered", () => {
   it("sets status=answered and started_at for the matching call", async () => {
     const m = makeAdmin()

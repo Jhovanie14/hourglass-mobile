@@ -31,8 +31,12 @@ export function computeFinalStatus(
 export function answeredAction(call: {
   direction: string | undefined
   status: string | undefined
-}): "mark_outbound_answered" | "bridge" | "voicemail" | "noop" {
+  aiHandled?: boolean
+}): "mark_outbound_answered" | "bridge" | "voicemail" | "start_ai" | "noop" {
   if (call.direction === "outbound") return "mark_outbound_answered"
+  // AI-handled calls have their own path; a duplicate answered event on a
+  // live AI call must never fall into the bridge/voicemail machinery.
+  if (call.aiHandled) return call.status === "ringing" ? "start_ai" : "noop"
   if (call.status === "answered") return "bridge"
   if (call.status === "voicemail") return "voicemail"
   return "noop"
