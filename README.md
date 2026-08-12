@@ -272,3 +272,34 @@ Returns inbound **and** outbound calls, SMS, and voicemails created after
   unset unless you enable push.
 
 See `docs/superpowers/specs/2026-07-07-jades-event-integration-design.md`.
+
+## AI voice agent (TLP test)
+
+Inbound calls to brands listed in `AI_AGENT_LABELS` are answered by a Telnyx
+AI Assistant instead of ringing agents. The call is recorded (dual channel);
+when the conversation ends, the full transcript is stored in
+`call_transcript_segments` (visible in the dashboard call history) and posted
+to Slack, followed by a signed recording link. If insights are configured on
+the assistant in the Telnyx portal, an AI summary message is posted too.
+
+**Env vars** (feature is fully dormant unless the first two are set):
+
+| Var | Purpose |
+|---|---|
+| `TELNYX_AI_ASSISTANT_ID` | Assistant ID from Telnyx portal → AI → AI Assistants |
+| `AI_AGENT_LABELS` | Comma-separated `phone_numbers.label` values to enable (e.g. `TLP`) |
+| `SLACK_WEBHOOK_URL` | Slack incoming-webhook URL for transcripts |
+| `SLACK_WEBHOOK_URL_<LABEL>` | Optional per-brand override (e.g. `SLACK_WEBHOOK_URL_TLP`) |
+| `APP_BASE_URL` | Optional; adds an "Open dashboard" link to Slack messages |
+
+**One-time prerequisites:** run in the Supabase SQL editor
+
+```sql
+alter table calls add column ai_handled boolean not null default false;
+alter table calls add column ai_conversation_id text;
+alter table calls add column ai_recording_path text;
+```
+
+and create a **private** storage bucket named `call-recordings`.
+
+See `docs/superpowers/specs/2026-08-13-tlp-ai-voice-slack-design.md`.
