@@ -121,3 +121,37 @@ export async function startCallTranscription(callControlId: string): Promise<voi
   // accepts and then never acts on, which leaves no trace otherwise.
   console.log(`🎧 Transcription start accepted (mode=${mode}) on ${callControlId}`)
 }
+
+/** Start the configured Telnyx AI Assistant speaking on an answered caller
+ *  leg. brand_label is available to the assistant's instructions/greeting as
+ *  {{brand_label}}, so one assistant can serve all four brands. */
+export async function startAIAssistantOnCall(params: {
+  callControlId: string
+  assistantId: string
+  brandLabel: string
+}): Promise<void> {
+  const telnyx = getTelnyxClient()
+  await withRetry(() =>
+    telnyx.calls.actions.startAIAssistant(params.callControlId, {
+      assistant: {
+        id: params.assistantId,
+        dynamic_variables: { brand_label: params.brandLabel },
+      },
+      command_id: commandId(),
+    })
+  )
+  console.log(`🤖 AI assistant ${params.assistantId} started on ${params.callControlId}`)
+}
+
+/** Record an AI-handled call: dual channel keeps caller and assistant on
+ *  separate tracks; mp3 to match the voicemail flow; no beep. */
+export async function startAICallRecording(callControlId: string): Promise<void> {
+  const telnyx = getTelnyxClient()
+  await withRetry(() =>
+    telnyx.calls.actions.startRecording(callControlId, {
+      format: "mp3",
+      channels: "dual",
+      command_id: commandId(),
+    })
+  )
+}
