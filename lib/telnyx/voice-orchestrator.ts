@@ -123,19 +123,21 @@ export async function startCallTranscription(callControlId: string): Promise<voi
 }
 
 /** Start the configured Telnyx AI Assistant speaking on an answered caller
- *  leg. brand_label is available to the assistant's instructions/greeting as
- *  {{brand_label}}, so one assistant can serve all four brands. */
+ *  leg. The assistant's instructions/greeting reference {{brand_name}} (the
+ *  spoken name, e.g. "The Launch Pad") — {{brand_label}} (the short code,
+ *  e.g. "TLP") rides along for tooling — so one assistant serves all brands. */
 export async function startAIAssistantOnCall(params: {
   callControlId: string
   assistantId: string
   brandLabel: string
+  brandName: string
 }): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() =>
     telnyx.calls.actions.startAIAssistant(params.callControlId, {
       assistant: {
         id: params.assistantId,
-        dynamic_variables: { brand_label: params.brandLabel },
+        dynamic_variables: { brand_name: params.brandName, brand_label: params.brandLabel },
       },
       command_id: commandId(),
     })

@@ -63,6 +63,9 @@ What has to exist before this works end-to-end:
      dormant when unset**)
    - `AI_AGENT_LABELS` — comma-separated `phone_numbers.label` values to
      enable, e.g. `TLP`
+   - `AI_BRAND_NAMES` — optional label→spoken-name map, e.g.
+     `TLP:The Launch Pad`; the assistant speaks `{{brand_name}}` and Slack
+     headers show it (falls back to the label when unmapped)
    - `SLACK_WEBHOOK_URL` — default Slack destination;
      `SLACK_WEBHOOK_URL_<LABEL>` (e.g. `SLACK_WEBHOOK_URL_TLP`) overrides per
      brand

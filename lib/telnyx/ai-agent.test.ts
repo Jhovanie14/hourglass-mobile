@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   aiAgentSettings,
   isAIAgentLabel,
+  brandNameForLabel,
   conversationMessagesToSegments,
 } from "./ai-agent"
 
@@ -29,6 +30,28 @@ describe("isAIAgentLabel", () => {
     expect(isAIAgentLabel(settings, "HGI")).toBe(false)
     expect(isAIAgentLabel(settings, null)).toBe(false)
     expect(isAIAgentLabel(null, "TLP")).toBe(false)
+  })
+})
+
+describe("brandNameForLabel", () => {
+  it("falls back to the label when no mapping is configured", () => {
+    expect(brandNameForLabel("TLP", {})).toBe("TLP")
+    expect(brandNameForLabel("TLP", { AI_BRAND_NAMES: "" })).toBe("TLP")
+  })
+
+  it("resolves mapped labels case-insensitively, with whitespace tolerance", () => {
+    const env = { AI_BRAND_NAMES: " TLP : The Launch Pad , STR: Star Realty " }
+    expect(brandNameForLabel("TLP", env)).toBe("The Launch Pad")
+    expect(brandNameForLabel("tlp", env)).toBe("The Launch Pad")
+    expect(brandNameForLabel("STR", env)).toBe("Star Realty")
+    expect(brandNameForLabel("HGI", env)).toBe("HGI")
+  })
+
+  it("ignores malformed entries", () => {
+    expect(brandNameForLabel("TLP", { AI_BRAND_NAMES: "garbage,TLP:The Launch Pad" })).toBe(
+      "The Launch Pad"
+    )
+    expect(brandNameForLabel("TLP", { AI_BRAND_NAMES: "garbage" })).toBe("TLP")
   })
 })
 

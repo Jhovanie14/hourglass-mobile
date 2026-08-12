@@ -17,6 +17,7 @@ import {
 import {
   aiAgentSettings,
   isAIAgentLabel,
+  brandNameForLabel,
   conversationMessagesToSegments,
   type ConversationMessage,
 } from "@/lib/telnyx/ai-agent"
@@ -372,6 +373,10 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
           callControlId: payload.call_control_id,
           assistantId: aiSettings.assistantId,
           brandLabel,
+          brandName: brandNameForLabel(
+            brandLabel,
+            process.env as Record<string, string | undefined>
+          ),
         })
         await supabase
           .from("calls")
@@ -706,16 +711,14 @@ async function handleAIRecordingSaved(
     console.error("⚠️ Failed to copy AI recording to bucket; keeping Telnyx URL:", err)
   }
 
-  const webhook = slackWebhookForLabel(
-    brandLabel,
-    process.env as Record<string, string | undefined>
-  )
+  const env = process.env as Record<string, string | undefined>
+  const webhook = slackWebhookForLabel(brandLabel, env)
   if (!webhook) return
   try {
     await postToSlack(
       webhook,
       buildAIRecordingMessage({
-        brandLabel,
+        brandLabel: brandNameForLabel(brandLabel, env),
         caller: call.contact_number,
         url: audioUrl,
         expiresInDays: AI_RECORDING_LINK_DAYS,
@@ -800,7 +803,7 @@ async function handleConversationEnded(
     await postToSlack(
       webhook,
       buildAICallMessage({
-        brandLabel,
+        brandLabel: brandNameForLabel(brandLabel, env),
         caller: call.contact_number,
         durationSec: payload.duration_sec ?? null,
         endedReason: payload.reason ?? null,
@@ -832,15 +835,17 @@ async function handleConversationInsights(supabase: SupabaseClient, payload: Tel
   const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
   const brandLabel = (pn as { label: string } | null)?.label ?? "Unknown"
 
-  const webhook = slackWebhookForLabel(
-    brandLabel,
-    process.env as Record<string, string | undefined>
-  )
+  const env = process.env as Record<string, string | undefined>
+  const webhook = slackWebhookForLabel(brandLabel, env)
   if (!webhook) return
   try {
     await postToSlack(
       webhook,
-      buildAISummaryMessage({ brandLabel, caller: call.contact_number, results })
+      buildAISummaryMessage({
+        brandLabel: brandNameForLabel(brandLabel, env),
+        caller: call.contact_number,
+        results,
+      })
     )
   } catch (err) {
     console.error("⚠️ Failed to post AI summary to Slack:", err)

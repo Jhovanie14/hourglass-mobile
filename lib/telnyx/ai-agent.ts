@@ -32,6 +32,20 @@ export function isAIAgentLabel(
   return settings.labels.includes(label.trim().toUpperCase())
 }
 
+/** Spoken/branded display name for a phone_numbers.label, from the optional
+ *  AI_BRAND_NAMES mapping (e.g. "TLP:The Launch Pad,STR:Star Realty"). The AI
+ *  says this name to callers; falls back to the label itself when unmapped. */
+export function brandNameForLabel(label: string, env: { AI_BRAND_NAMES?: string }): string {
+  for (const entry of (env.AI_BRAND_NAMES ?? "").split(",")) {
+    const colon = entry.indexOf(":")
+    if (colon === -1) continue
+    const key = entry.slice(0, colon).trim().toUpperCase()
+    const name = entry.slice(colon + 1).trim()
+    if (key && name && key === label.trim().toUpperCase()) return name
+  }
+  return label
+}
+
 /** One message from telnyx.ai.conversations.messages.list(conversation_id). */
 export type ConversationMessage = {
   role: string // "user" | "assistant" | "tool"
