@@ -245,10 +245,13 @@ webhook → set `AI_AGENT_LABELS=TLP` → live test call.
    Answer questions, take messages — collect name, number, and reason for
    calling — and keep replies short and natural. This call may be recorded
    for quality purposes.")
-2. **Slack channel** — name, and who has permission to install the webhook
-   app in the client's workspace?
-3. **Engagement mode** — AI answers *all* TLP calls (built), or only when no
-   agent is online / after a ring timeout?
+2. **Slack channel** — ~~name, and who has permission to install the webhook
+   app in the client's workspace?~~ **Decided 2026-08-13:** the client creates
+   the channel + webhook in their workspace and sends us the URL; the ask is
+   written up in `docs/slack-webhook-request.md`.
+3. **Engagement mode** — ~~AI answers *all* TLP calls (built), or only when no
+   agent is online / after a ring timeout?~~ **Decided 2026-08-13:** AI
+   answers ALL TLP inbound calls, even with agents online (as built).
 4. **Recording disclosure** — include "this call may be recorded" in the
    greeting? (Recommended; TX is one-party consent, but callers can be
    anywhere.)
