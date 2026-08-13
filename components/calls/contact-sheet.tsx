@@ -23,6 +23,7 @@ export function ContactSheet({
   existingName,
   accessToken,
   onSaved,
+  allowNumberEdit = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -32,24 +33,29 @@ export function ContactSheet({
   existingName?: string | null
   accessToken?: string
   onSaved?: () => void
+  /** Directory "add new" flow: the number is typed instead of coming from a
+   *  call row. Defaults to false = existing callers are unchanged. */
+  allowNumberEdit?: boolean
 }) {
   // Mounted fresh each open (parents render conditionally) → seed state from
   // props once; no re-seed effect needed.
   const [name, setName] = useState(existingName ?? "")
+  const [number, setNumber] = useState(contactNumber)
   const [selectedId, setSelectedId] = useState<string | null>(
     defaultPhoneNumberId ?? phoneNumbers[0]?.id ?? null
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSave = Boolean(selectedId && name.trim()) && !saving
+  const targetNumber = allowNumberEdit ? number.trim() : contactNumber
+  const canSave = Boolean(selectedId && name.trim() && targetNumber) && !saving
 
   async function handleSave() {
-    if (!selectedId || !name.trim() || saving) return
+    if (!selectedId || !name.trim() || !targetNumber || saving) return
     setSaving(true)
     setError(null)
     const res = await saveContact(
-      { phoneNumberId: selectedId, contactNumber, name: name.trim() },
+      { phoneNumberId: selectedId, contactNumber: targetNumber, name: name.trim() },
       accessToken
     )
     setSaving(false)
@@ -69,11 +75,20 @@ export function ContactSheet({
         </SheetHeader>
 
         <div className="space-y-4 px-4 pb-2">
+          {allowNumberEdit && (
+            <Input
+              type="tel"
+              placeholder="Phone number (e.g. +18325550100)"
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              autoFocus
+            />
+          )}
           <Input
             placeholder="Contact name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            autoFocus
+            autoFocus={!allowNumberEdit}
           />
 
           <div>
@@ -103,7 +118,9 @@ export function ContactSheet({
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">Saving {contactNumber}</p>
+          {!allowNumberEdit && (
+            <p className="text-xs text-muted-foreground">Saving {contactNumber}</p>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
