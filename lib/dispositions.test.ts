@@ -1,5 +1,36 @@
 import { describe, it, expect, vi } from "vitest"
-import { saveDisposition, fetchDispositionsForCalls } from "./dispositions"
+import {
+  saveDisposition,
+  fetchDispositionsForCalls,
+  clearFollowUp,
+} from "./dispositions"
+
+function updateEqClient(result: { error: unknown }) {
+  const eq = vi.fn().mockResolvedValue(result)
+  const update = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  return { client: { from } as never, from, update, eq }
+}
+
+describe("clearFollowUp", () => {
+  it("nulls follow_up_at on the row by id", async () => {
+    const m = updateEqClient({ error: null })
+    await clearFollowUp(m.client, "d1")
+    expect(m.from).toHaveBeenCalledWith("call_dispositions")
+    expect(m.update).toHaveBeenCalledWith({
+      follow_up_at: null,
+      updated_at: expect.any(String),
+    })
+    expect(m.eq).toHaveBeenCalledWith("id", "d1")
+  })
+
+  it("throws a friendly message on error", async () => {
+    const m = updateEqClient({ error: { message: "boom" } })
+    await expect(clearFollowUp(m.client, "d1")).rejects.toThrow(
+      /Failed to clear follow-up/
+    )
+  })
+})
 
 function upsertClient(result: { data: unknown; error: unknown }) {
   const single = vi.fn().mockResolvedValue(result)

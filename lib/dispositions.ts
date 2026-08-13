@@ -58,6 +58,19 @@ export async function saveDisposition(
 }
 
 /**
+ * Clear a follow-up reminder on the agent's own disposition row. RLS
+ * guarantees ownership; the row keeps its outcome and notes.
+ */
+export async function clearFollowUp(db: Db, id: string): Promise<void> {
+  const { error } = await db
+    .from("call_dispositions")
+    .update({ follow_up_at: null, updated_at: new Date().toISOString() })
+    .eq("id", id)
+
+  if (error) throw new Error(`Failed to clear follow-up (${error.message})`)
+}
+
+/**
  * The agent's dispositions for a set of calls, keyed by telnyx_call_id.
  * RLS scopes rows to this agent.
  */
