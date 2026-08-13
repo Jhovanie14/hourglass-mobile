@@ -70,3 +70,4 @@ export type PhoneNumber = {
 export type DateRange = "today" | "yesterday" | "7days" | "30days" | "all"
 export type StatusFilter = "all" | "answered" | "missed" | "completed" | "failed" | "voicemail"
 export type DirectionFilter = "all" | CallDirection
+export type AnsweredByFilter = "all" | "ai" | "team"

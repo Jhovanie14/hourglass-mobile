@@ -3,6 +3,7 @@
 import { Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type {
+  AnsweredByFilter,
   DateRange,
   DirectionFilter,
   PhoneNumber,
@@ -13,6 +14,7 @@ export type CallFilters = {
   inbox: string
   status: StatusFilter
   direction: DirectionFilter
+  answeredBy: AnsweredByFilter
   dateRange: DateRange
   search: string
 }
@@ -100,6 +102,23 @@ export function CallsFilterBar({
             )
           })}
         </div>
+      </div>
+
+      {/* Answered by */}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="f-answered-by" className="text-xs font-medium text-muted-foreground">
+          Answered by
+        </label>
+        <select
+          id="f-answered-by"
+          value={filters.answeredBy}
+          onChange={(e) => onChange({ answeredBy: e.target.value as AnsweredByFilter })}
+          className={SELECT_CLASS}
+        >
+          <option value="all">All</option>
+          <option value="ai">AI assistant</option>
+          <option value="team">Team</option>
+        </select>
       </div>
 
       {/* Date range */}

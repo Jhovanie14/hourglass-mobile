@@ -6,6 +6,7 @@ import { format, formatDistanceToNow } from "date-fns"
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Bot,
   MessageSquare,
   Mic,
   Phone,
@@ -58,6 +59,16 @@ function StatusBadge({ status }: { status: string }) {
       )}
     >
       {status}
+    </span>
+  )
+}
+
+/** Marks calls the AI voice assistant answered (calls.ai_handled). */
+function AIBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">
+      <Bot className="h-3 w-3" />
+      AI
     </span>
   )
 }
@@ -231,6 +242,7 @@ export function CallsTable({
                         {call.has_voicemail && (
                           <Mic className="h-3 w-3 text-purple-500" />
                         )}
+                        {call.ai_handled && <AIBadge />}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -355,7 +367,10 @@ export function CallsTable({
                                   : "—"
                               }
                             />
-                            <DetailRow label="Agent" value="—" />
+                            <DetailRow
+                              label="Agent"
+                              value={call.ai_handled ? "AI assistant" : "—"}
+                            />
                           </dl>
 
                           {call.telnyx_call_id && dispoMap[call.telnyx_call_id] && (
@@ -442,6 +457,7 @@ export function CallsTable({
                   {call.has_voicemail && (
                     <Mic className="h-3.5 w-3.5 text-purple-500" />
                   )}
+                  {call.ai_handled && <AIBadge />}
                   <StatusBadge status={call.status} />
                 </div>
               </div>

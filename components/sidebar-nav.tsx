@@ -12,11 +12,13 @@ import {
   SidebarMenuButton,
 } from "@/components/ui/sidebar"
 import {
+  CalendarClock,
   LayoutDashboard,
   MessageSquare,
   Phone,
   PhoneIncoming,
   UserPlus,
+  Users,
 } from "lucide-react"
 import { PresenceToggle } from "@/components/calls/ui/presence-toggle"
 
@@ -28,6 +30,8 @@ const NAV_ITEMS = [
     icon: MessageSquare,
   },
   { label: "Calls", href: "/dashboard/calls", icon: PhoneIncoming },
+  { label: "Contacts", href: "/dashboard/contacts", icon: Users },
+  { label: "Follow-ups", href: "/dashboard/follow-ups", icon: CalendarClock },
 ]
 
 const ADMIN_NAV_ITEMS = [

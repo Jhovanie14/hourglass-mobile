@@ -49,6 +49,7 @@ export function CallsPageClient({
     inbox: "all",
     status: "all",
     direction: "all",
+    answeredBy: "all",
     dateRange: "7days",
     search: "",
   })
@@ -126,6 +127,9 @@ export function CallsPageClient({
 
       if (filters.direction !== "all" && c.direction !== filters.direction)
         return false
+
+      if (filters.answeredBy === "ai" && c.ai_handled !== true) return false
+      if (filters.answeredBy === "team" && c.ai_handled === true) return false
 
       const created = new Date(c.created_at)
       if (start && created < start) return false
