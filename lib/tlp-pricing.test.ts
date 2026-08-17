@@ -7,23 +7,37 @@ import { TLP_PRICING, pricingText } from "./tlp-pricing"
 const INACTIVE_NAMES = ["Deluxe wash", "Basic wash", "test wash"]
 
 describe("TLP_PRICING", () => {
-  it("carries the three monthly memberships", () => {
+  it("carries the four monthly memberships in site order", () => {
     expect(TLP_PRICING.memberships.map((m) => m.name)).toEqual([
       "Quick Service",
       "Express Detail",
+      "Commercial Wash",
       "Self-Service Bay",
     ])
   })
 
   it("prices memberships at full and first-time-member rates", () => {
-    const [quick, express, selfService] = TLP_PRICING.memberships
+    const [quick, express, commercial, selfService] = TLP_PRICING.memberships
     expect(quick.monthlyPrice).toBe(39.99)
     expect(quick.firstTimePrice).toBe(35.99)
     expect(express.monthlyPrice).toBe(59.99)
     expect(express.firstTimePrice).toBe(53.99)
+    expect(commercial.monthlyPrice).toBe(89.99)
+    expect(commercial.firstTimePrice).toBe(80.99)
     // No advertised discount on the self-service bay tier.
     expect(selfService.monthlyPrice).toBe(19.99)
     expect(selfService.firstTimePrice).toBeNull()
+  })
+
+  it("treats Commercial Wash as exterior only, pending confirmation of the source copy", () => {
+    // The marketing copy contradicts itself: the prose says "Express exterior
+    // wash … hand wash, wheels & tires shine, towel dry" while the bullet list
+    // repeats Express Detail's interior items verbatim. Until the client
+    // confirms, we promise the lesser service — under-delivering on a quote is
+    // recoverable, over-promising is a dispute.
+    const commercial = TLP_PRICING.memberships[2]
+    expect(commercial.includes.join(" ")).not.toMatch(/interior/i)
+    expect(commercial.notes.join(" ")).toMatch(/exterior only/i)
   })
 
   it("carries only the six active one-time services", () => {
@@ -48,8 +62,9 @@ describe("TLP_PRICING", () => {
     expect(TLP_PRICING.oneTimeServices.map((s) => s.price)).not.toContain(1)
   })
 
-  it("has no price for the commercial plan, so the assistant cannot invent one", () => {
-    expect(TLP_PRICING.commercialPlan.price).toBeNull()
+  it("lists the vehicle types that need the commercial plan", () => {
+    expect(TLP_PRICING.commercialVehicleTypes.join(" ")).toMatch(/tow truck/i)
+    expect(TLP_PRICING.commercialVehicleTypes.join(" ")).toMatch(/sprinter van/i)
   })
 
   it("keeps the Quick naming trap explicit: membership shines tires, one-time does not", () => {
@@ -83,14 +98,23 @@ describe("pricingText", () => {
     }
   })
 
-  it("says the commercial plan price is unknown rather than guessing", () => {
-    expect(text).toMatch(/commercial/i)
-    expect(text).toMatch(/don't have|do not have|unknown/i)
+  it("quotes the commercial plan now that we have its price", () => {
+    expect(text).toContain("Commercial Wash")
+    expect(text).toContain("89.99")
+    expect(text).toContain("80.99")
   })
 
-  it("names the excluded commercial vehicle types", () => {
+  it("names the vehicle types that need the commercial plan", () => {
     expect(text).toMatch(/tow truck/i)
     expect(text).toMatch(/sprinter van/i)
+  })
+
+  it("does not promise interior work on the commercial plan", () => {
+    const commercialLine = text
+      .split("\n")
+      .find((l) => l.includes("Commercial Wash"))
+    expect(commercialLine).toBeDefined()
+    expect(commercialLine!).not.toMatch(/interior/i)
   })
 
   it("qualifies the 10% discount as first-time membership only", () => {

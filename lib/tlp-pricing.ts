@@ -31,18 +31,12 @@ export type OneTimeService = {
   excludes: string[]
 }
 
-export type CommercialPlan = {
-  /** Null on purpose: we have not been given the commercial pricing. The
-   *  assistant must escalate rather than quote a number it invented. */
-  price: null
-  excludedFromMemberships: string[]
-}
-
 export type BrandPricing = {
   brand: string
   memberships: Membership[]
   oneTimeServices: OneTimeService[]
-  commercialPlan: CommercialPlan
+  /** Vehicle types that cannot use the personal tiers and need Commercial Wash. */
+  commercialVehicleTypes: string[]
   vehiclePolicy: string
   discountPolicy: string
 }
@@ -75,6 +69,29 @@ export const TLP_PRICING: BrandPricing = {
         "Unlimited washes",
       ],
       notes: ["Inside and outside", "About $1.80 a day"],
+    },
+    {
+      name: "Commercial Wash",
+      monthlyPrice: 89.99,
+      firstTimePrice: 80.99,
+      // EXTERIOR ONLY — deliberately excludes the interior items that appear in
+      // the source marketing bullets. Those bullets are byte-identical to the
+      // Express Detail tier's and contradict this plan's own prose ("Express
+      // exterior wash … hand wash, wheels & tires shine, towel dry"), so they
+      // read as a copy-paste error. Until the client confirms, promise the
+      // lesser service: under-delivering on a quote is recoverable, an
+      // over-promise at the till is not. See lib/tlp-pricing.test.ts.
+      includes: [
+        "Hand wash exterior",
+        "Wheels and tires shine",
+        "Towel dry",
+        "Unlimited washes",
+      ],
+      notes: [
+        "Exterior only",
+        "About $2.70 a day",
+        "Built for commercial vehicles — tow trucks, 8 ft and 9 ft bed trucks, sprinter vans",
+      ],
     },
     {
       name: "Self-Service Bay",
@@ -152,17 +169,14 @@ export const TLP_PRICING: BrandPricing = {
     },
   ],
 
-  commercialPlan: {
-    price: null,
-    excludedFromMemberships: [
-      "tow trucks",
-      "8 ft and 9 ft bed trucks",
-      "sprinter vans",
-    ],
-  },
+  commercialVehicleTypes: [
+    "tow trucks",
+    "8 ft and 9 ft bed trucks",
+    "sprinter vans",
+  ],
 
   vehiclePolicy:
-    "Memberships cover personal vehicles of any size. Commercial vehicles are excluded.",
+    "The Quick Service, Express Detail and Self-Service Bay memberships cover personal vehicles of any size. Commercial vehicles need the Commercial Wash plan.",
 
   discountPolicy:
     "The 10% discount applies to a first-time membership only, not to renewals or to one-time services.",
@@ -211,10 +225,7 @@ export function pricingText(pricing: BrandPricing = TLP_PRICING): string {
   lines.push("")
   lines.push(`VEHICLES: ${pricing.vehiclePolicy}`)
   lines.push(
-    `Commercial vehicles that need a separate commercial plan include ${pricing.commercialPlan.excludedFromMemberships.join(", ")}.`
-  )
-  lines.push(
-    "COMMERCIAL PRICING: we don't have the commercial plan price available to quote. If a caller asks, say you don't have that figure to hand and offer to transfer them or take a message. Never estimate it."
+    `Vehicles that need the Commercial Wash plan: ${pricing.commercialVehicleTypes.join(", ")}.`
   )
 
   return lines.join("\n")

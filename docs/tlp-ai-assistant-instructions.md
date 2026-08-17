@@ -67,12 +67,15 @@ calling. Do not promise a transfer you cannot make, and do not offer a transfer
 unless they ask for one.
 
 COMMERCIAL VEHICLES
-Memberships cover personal vehicles of any size. Tow trucks, 8 ft and 9 ft bed
-trucks and sprinter vans need a separate commercial plan, and you do not have
-commercial pricing. If someone asks about a commercial vehicle, say the
-memberships are for personal vehicles, that there's a separate commercial plan,
-and that you don't have that price to hand — then offer to transfer them or take
-a message.
+The Quick Service, Express Detail and Self-Service Bay memberships are for
+personal vehicles. Tow trucks, 8 ft and 9 ft bed trucks and sprinter vans need
+the Commercial Wash plan instead — quote that from the pricing block.
+
+Commercial Wash is an exterior wash: hand wash, wheels and tires shine, towel
+dry, unlimited washes. Do not tell a commercial caller that interior cleaning is
+included. If they ask specifically about interior work on a commercial vehicle,
+say you'll have someone confirm what's covered, and take a message or transfer
+them.
 
 TAKING A MESSAGE
 Collect name, callback number, and the reason for calling. Read the number back
@@ -131,8 +134,9 @@ message.
    they have an appointment and turns up to nothing is worse than one who was
    told someone will call back. Closing this is the ecosystem booking
    integration — the separate project already identified.
-2. **Quote commercial pricing.** We were never given it. Send the missing
-   details and I'll add them to `lib/tlp-pricing.ts`.
+2. **Confirm whether Commercial Wash includes interior work.** The source copy
+   contradicts itself — see §5. The assistant promises exterior only and
+   escalates if asked directly.
 3. **Know anything not in its instructions** — hours, locations, staff names,
    promotions. Add them here if callers ask for them.
 4. **Reach an agent who came online mid-call.** Availability is a snapshot from
@@ -148,3 +152,31 @@ rows with scratch data — including a `test wash` priced at $1.00 — and
 `lib/tlp-pricing.test.ts` asserts none of the inactive rows can reach a caller.
 If you add a service, add it to the test's expected list too, or the suite will
 tell you the file and the prompt have drifted.
+
+## §5 Open: does Commercial Wash include interior cleaning?
+
+The Commercial Wash marketing copy contradicts itself.
+
+Its prose reads: *"Express **exterior** wash for commercial vehicles. Hand wash,
+wheels & tires shine, and towel dry unlimited washes built for tow trucks, large
+bed trucks, and sprinter vans."*
+
+Its bullet list reads: *"Everything in Quick · **Interior vacuum** · **Interior
+wipe-down** · **Windows cleaned** · Unlimited washes · Any vehicle size."*
+
+Those bullets are byte-identical to the Express Detail tier's, which is why they
+look like a copy-paste error rather than a real inclusion.
+
+**Currently encoded: exterior only.** `lib/tlp-pricing.ts` deliberately omits the
+interior items, and `lib/tlp-pricing.test.ts` asserts they stay omitted so nobody
+adds them back without reading this note.
+
+The reasoning is asymmetric risk. If the plan really is exterior-only and the
+assistant promised interior work, a commercial driver arrives expecting a vacuum
+they were quoted and you either eat the cost or have the argument. If the plan
+does include interior work and the assistant under-promised, the customer gets
+more than expected.
+
+**To change it:** confirm which is right. If interior is genuinely included, add
+the three interior items to the `Commercial Wash` entry's `includes`, drop
+`"Exterior only"` from its `notes`, and update the two assertions in the test.
