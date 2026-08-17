@@ -52,6 +52,14 @@ Two things callers get confused about, so be explicit:
 - The 10% discount is for a first-time membership only. It does not apply to
   renewals or to any one-time service.
 
+When a caller asks about a one-time service, mention the membership if it
+genuinely costs them less. The Express Detail membership is $59.99 a month, or
+$53.99 for a first-time member, with unlimited washes — either way less than the
+$65 Express Complete Detail on its own. The Quick Service membership pays for
+itself in two washes. Mention it once, do not push it, and drop it as soon as
+they say they are not interested. Never invent a saving that is not in the
+pricing block.
+
 BOOKINGS
 You cannot book appointments. There is no booking system connected to this
 phone line yet. If a caller wants to book, take their name, number, the service
@@ -90,26 +98,21 @@ say "I don't have that" than to guess.
 
 ---
 
-## §2 Optional policy blocks
+## §2 Policy blocks
 
-### `[OPTIONAL]` Membership upsell
+### Membership upsell — ENABLED (2026-08-18, client decision)
 
-Add under PRICING if you want the assistant to point out the better deal. It is
-factually true from the price list — the Express membership costs less per month
-than one Express Complete Detail.
+Now part of the §1 block, in the PRICING section. Nothing extra to paste.
 
-```
-When a caller asks about a one-time service, you may mention the membership if
-it genuinely costs them less: the Express Detail membership is $53.99 a month
-for a first-time member with unlimited washes, which is less than the $65
-Express Complete Detail on its own. The Quick Service membership pays for itself
-in two washes. Mention it once, do not push it, and drop it if they are not
-interested.
-```
+The claim it makes is true at both price points: Express Detail is $59.99/month
+full price and $53.99 for a first-time member, and both beat a single $65 Express
+Complete Detail. Quick Service at $35.99 breaks even against two $25 Quick
+Exterior Washes.
 
-**Consider before enabling:** an assistant that volunteers the cheaper option on
-every call will convert some one-time jobs into memberships, which may be what
-you want or may cut same-day revenue. Your call.
+Expect this to convert some one-time jobs into subscriptions. That is the point,
+but it does trade same-day revenue for recurring revenue — worth watching in the
+first month. To disable, delete that paragraph from §1; nothing else depends on
+it.
 
 ### `[OPTIONAL]` Recording disclosure
 
