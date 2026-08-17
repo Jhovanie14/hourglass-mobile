@@ -12,6 +12,7 @@ vi.mock("@/lib/telnyx/ring-all", () => ({ getOnlineReachableAgents }))
 vi.mock("@/lib/admin", () => ({ createAdminClient }))
 
 import { POST } from "./route"
+import { pricingText } from "@/lib/tlp-pricing"
 
 const req = () =>
   new Request("http://test/api/webhooks/telnyx/ai/variables", {
@@ -43,6 +44,7 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
       dynamic_variables: {
         agents_available: true,
         targets: [{ to: "sip:gencred1@sip.telnyx.com", name: "Agent 1" }],
+        pricing: pricingText(),
       },
     })
   })
@@ -52,7 +54,11 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      dynamic_variables: { agents_available: false, targets: [] },
+      dynamic_variables: {
+        agents_available: false,
+        targets: [],
+        pricing: pricingText(),
+      },
     })
   })
 
@@ -63,7 +69,11 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      dynamic_variables: { agents_available: false, targets: [] },
+      dynamic_variables: {
+        agents_available: false,
+        targets: [],
+        pricing: pricingText(),
+      },
     })
     expect(getOnlineReachableAgents).not.toHaveBeenCalled()
   })
@@ -75,7 +85,20 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      dynamic_variables: { agents_available: false, targets: [] },
+      dynamic_variables: {
+        agents_available: false,
+        targets: [],
+        pricing: pricingText(),
+      },
     })
+  })
+
+  it("still serves pricing when presence is unavailable, so the AI can quote prices without transfer", async () => {
+    getOnlineReachableAgents.mockRejectedValue(new Error("db down"))
+
+    const body = await POST(req()).then((r) => r.json())
+
+    expect(body.dynamic_variables.pricing).toContain("Express Complete Detail")
+    expect(body.dynamic_variables.agents_available).toBe(false)
   })
 })

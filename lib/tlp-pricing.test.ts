@@ -1,0 +1,99 @@
+import { describe, expect, it } from "vitest"
+import { TLP_PRICING, pricingText } from "./tlp-pricing"
+
+/** Names and prices lifted from the inactive rows of service_packages_rows.csv.
+ *  None of these may ever reach a caller. The $1.00 "test wash" is the one that
+ *  would actually cost money if quoted. */
+const INACTIVE_NAMES = ["Deluxe wash", "Basic wash", "test wash"]
+
+describe("TLP_PRICING", () => {
+  it("carries the three monthly memberships", () => {
+    expect(TLP_PRICING.memberships.map((m) => m.name)).toEqual([
+      "Quick Service",
+      "Express Detail",
+      "Self-Service Bay",
+    ])
+  })
+
+  it("prices memberships at full and first-time-member rates", () => {
+    const [quick, express, selfService] = TLP_PRICING.memberships
+    expect(quick.monthlyPrice).toBe(39.99)
+    expect(quick.firstTimePrice).toBe(35.99)
+    expect(express.monthlyPrice).toBe(59.99)
+    expect(express.firstTimePrice).toBe(53.99)
+    // No advertised discount on the self-service bay tier.
+    expect(selfService.monthlyPrice).toBe(19.99)
+    expect(selfService.firstTimePrice).toBeNull()
+  })
+
+  it("carries only the six active one-time services", () => {
+    expect(TLP_PRICING.oneTimeServices.map((s) => s.name)).toEqual([
+      "Quick Exterior Wash",
+      "Quick Interior Refresh",
+      "Classic Complete",
+      "Express Exterior Detail",
+      "Express Interior Detail",
+      "Express Complete Detail",
+    ])
+  })
+
+  it("excludes every inactive service from the CSV", () => {
+    const names = TLP_PRICING.oneTimeServices.map((s) => s.name)
+    for (const inactive of INACTIVE_NAMES) {
+      expect(names).not.toContain(inactive)
+    }
+  })
+
+  it("never contains the $1.00 test price", () => {
+    expect(TLP_PRICING.oneTimeServices.map((s) => s.price)).not.toContain(1)
+  })
+
+  it("has no price for the commercial plan, so the assistant cannot invent one", () => {
+    expect(TLP_PRICING.commercialPlan.price).toBeNull()
+  })
+
+  it("keeps the Quick naming trap explicit: membership shines tires, one-time does not", () => {
+    const quickMembership = TLP_PRICING.memberships[0]
+    const quickOneTime = TLP_PRICING.oneTimeServices[0]
+    expect(quickMembership.includes.join(" ")).toMatch(/tires/i)
+    expect(quickOneTime.excludes.join(" ")).toMatch(/tire shine/i)
+  })
+})
+
+describe("pricingText", () => {
+  const text = pricingText()
+
+  it("states every active service with its price", () => {
+    for (const s of TLP_PRICING.oneTimeServices) {
+      expect(text).toContain(s.name)
+      expect(text).toContain(s.price.toFixed(2))
+    }
+  })
+
+  it("states every membership with its monthly price", () => {
+    for (const m of TLP_PRICING.memberships) {
+      expect(text).toContain(m.name)
+      expect(text).toContain(m.monthlyPrice.toFixed(2))
+    }
+  })
+
+  it("leaks no inactive service name", () => {
+    for (const inactive of INACTIVE_NAMES) {
+      expect(text).not.toContain(inactive)
+    }
+  })
+
+  it("says the commercial plan price is unknown rather than guessing", () => {
+    expect(text).toMatch(/commercial/i)
+    expect(text).toMatch(/don't have|do not have|unknown/i)
+  })
+
+  it("names the excluded commercial vehicle types", () => {
+    expect(text).toMatch(/tow truck/i)
+    expect(text).toMatch(/sprinter van/i)
+  })
+
+  it("qualifies the 10% discount as first-time membership only", () => {
+    expect(text).toMatch(/first[- ]time/i)
+  })
+})

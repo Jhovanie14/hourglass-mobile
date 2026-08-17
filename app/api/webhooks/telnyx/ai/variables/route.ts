@@ -6,14 +6,20 @@ import {
   transferVariables,
   wrapDynamicVariables,
 } from "@/lib/telnyx/ai-transfer"
+import { pricingText } from "@/lib/tlp-pricing"
 
 export const runtime = "nodejs"
 
 /** Always 200 with the take-a-message state. Telnyx falls back to assistant
  *  defaults on a non-2xx, so an error status would reach the same outcome —
- *  but a 200 stops it retrying a request we are never going to accept. */
+ *  but a 200 stops it retrying a request we are never going to accept.
+ *
+ *  Pricing is still served here: it is a local constant, so losing presence is
+ *  no reason to stop the assistant quoting prices. It just cannot transfer. */
 function failSafe(): Response {
-  return Response.json(wrapDynamicVariables(FAIL_SAFE_VARIABLES))
+  return Response.json(
+    wrapDynamicVariables({ ...FAIL_SAFE_VARIABLES, pricing: pricingText() })
+  )
 }
 
 /**
@@ -53,7 +59,9 @@ export async function POST(req: Request) {
     console.log(
       `🤖 AI variables: agents_available=${vars.agents_available} targets=${vars.targets.length}`
     )
-    return Response.json(wrapDynamicVariables(vars))
+    return Response.json(
+      wrapDynamicVariables({ ...vars, pricing: pricingText() })
+    )
   } catch (err) {
     console.error("⚠️ AI variables webhook failed; falling back to no-agents:", err)
     return failSafe()

@@ -47,9 +47,9 @@ export function transferVariables(agents: ReachableAgent[]): TransferVariables {
 }
 
 /** Telnyx silently ignores a flat response and falls back to assistant
- *  defaults, so every response goes through this wrapper. */
-export function wrapDynamicVariables(vars: TransferVariables): {
-  dynamic_variables: TransferVariables
-} {
+ *  defaults, so every response goes through this wrapper. Generic because the
+ *  route composes transfer variables with others (e.g. pricing) before
+ *  wrapping. */
+export function wrapDynamicVariables<T>(vars: T): { dynamic_variables: T } {
   return { dynamic_variables: vars }
 }
