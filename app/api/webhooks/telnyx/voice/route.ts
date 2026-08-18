@@ -193,32 +193,12 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     return
   }
 
-  // AI voice agent (TLP test): flagged brands are answered by the Telnyx AI
-  // assistant instead of ringing agents. Fully dormant unless configured.
+  // AI voice agent (TLP): flagged brands still ring their own agents first. The
+  // assistant only picks up where the caller would otherwise have hit voicemail
+  // — nobody available (below), every dial failed (below), or nobody answered in
+  // time (handleCallHangup). Fully dormant unless configured.
   const aiSettings = aiAgentSettings(process.env as Record<string, string | undefined>)
-  if (isAIAgentLabel(aiSettings, phoneNumber.label)) {
-    const { error: aiUpsertError } = await supabase.from("calls").upsert(
-      {
-        phone_number_id: phoneNumber.id,
-        contact_number: payload.from,
-        direction: "inbound",
-        status: "ringing",
-        telnyx_call_id: payload.call_control_id,
-        ai_handled: true,
-      },
-      { onConflict: "telnyx_call_id", ignoreDuplicates: true }
-    )
-    if (aiUpsertError) {
-      console.error("⚠️ Failed to upsert AI-handled call row:", aiUpsertError)
-      return
-    }
-    try {
-      await answerCaller(payload.call_control_id)
-    } catch (err) {
-      console.error("⚠️ Failed to answer caller for AI agent:", err)
-    }
-    return
-  }
+  const aiBrand = isAIAgentLabel(aiSettings, phoneNumber.label)
 
   const { error: upsertError } = await supabase.from("calls").upsert(
     {
@@ -250,13 +230,12 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
   const agents = await getOnlineReachableAgents(supabase)
 
   if (agents.length === 0) {
-    // Nobody to ring → voicemail. Mark, then answer A; greeting plays on A's answered.
-    await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
-    try {
-      await answerCaller(payload.call_control_id)
-    } catch (err) {
-      console.error("⚠️ Failed to answer caller for voicemail (no agents):", err)
-    }
+    await answerWithAIOrVoicemail(supabase, {
+      callId: call.id,
+      aLegId: payload.call_control_id,
+      aiBrand,
+      context: "no agents",
+    })
     return
   }
 
@@ -270,6 +249,7 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
         callerNumber: payload.from,
         sipUsername: a.sipUsername,
         userId: a.userId,
+        ...(aiBrand && aiSettings ? { timeoutSecs: aiSettings.ringTimeoutSecs } : {}),
       }).then((agentLegId) => ({ agentLegId, userId: a.userId }))
     )
   )
@@ -287,13 +267,12 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
     .map((r) => r.value)
 
   if (dialed.length === 0) {
-    // Every dial failed → voicemail.
-    await supabase.from("calls").update({ status: "voicemail" }).eq("id", call.id)
-    try {
-      await answerCaller(payload.call_control_id)
-    } catch (err) {
-      console.error("⚠️ Failed to answer caller for voicemail (all dials failed):", err)
-    }
+    await answerWithAIOrVoicemail(supabase, {
+      callId: call.id,
+      aLegId: payload.call_control_id,
+      aiBrand,
+      context: "all dials failed",
+    })
     return
   }
 
@@ -450,6 +429,48 @@ async function speakGreeting(aLegId: string, call: { phone_numbers?: unknown }) 
   }
 }
 
+/**
+ * Every path where no agent is going to take the call converges here: on an AI
+ * brand the assistant picks up, everywhere else the caller gets voicemail.
+ *
+ * The AI hand-off deliberately leaves `status` as "ringing" — `answeredAction`
+ * only returns "start_ai" for a ringing ai_handled row — and answering A is what
+ * fires the `call.answered` event that actually starts the assistant.
+ */
+async function answerWithAIOrVoicemail(
+  supabase: SupabaseClient,
+  opts: { callId: string; aLegId: string; aiBrand: boolean; context: string }
+) {
+  let handedToAI = false
+  if (opts.aiBrand) {
+    const { error } = await supabase
+      .from("calls")
+      .update({ ai_handled: true })
+      .eq("id", opts.callId)
+    if (error) {
+      // An un-flagged row would answer A into dead air (answeredAction → "noop"),
+      // so a failed flag write has to fall through to voicemail, not proceed.
+      console.error(`⚠️ Failed to flag call for the AI agent (${opts.context}):`, error)
+    } else {
+      handedToAI = true
+    }
+  }
+  if (!handedToAI) {
+    await supabase.from("calls").update({ status: "voicemail" }).eq("id", opts.callId)
+  }
+  try {
+    await answerCaller(opts.aLegId)
+  } catch (err) {
+    // The leg is gone (usually the caller hung up mid-ring). Nothing will start
+    // the assistant now, so drop the flag rather than leave an abandoned call
+    // labelled AI-handled in the dashboard.
+    console.error(`⚠️ Failed to answer caller (${opts.context}):`, err)
+    if (handedToAI) {
+      await supabase.from("calls").update({ ai_handled: false }).eq("id", opts.callId)
+    }
+  }
+}
+
 async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const agentState = decodeClientState(payload.client_state)
 
@@ -463,16 +484,23 @@ async function handleCallHangup(supabase: SupabaseClient, payload: TelnyxCallPay
 
     const { data: callerCall } = await supabase
       .from("calls")
-      .select("id, status")
+      .select("id, status, phone_numbers(label)")
       .eq("telnyx_call_id", agentState.aLegId)
       .maybeSingle()
     if (callerCall?.status === "ringing") {
-      await supabase.from("calls").update({ status: "voicemail" }).eq("id", callerCall.id)
-      try {
-        await answerCaller(agentState.aLegId)
-      } catch (err) {
-        console.error("⚠️ Failed to answer caller for voicemail (all agents failed):", err)
-      }
+      // Agents were online but nobody answered inside the ring window. On an AI
+      // brand the assistant catches it; the caller has already waited, so
+      // voicemail here is the worse of the two outcomes.
+      const pn = Array.isArray(callerCall.phone_numbers)
+        ? callerCall.phone_numbers[0]
+        : callerCall.phone_numbers
+      const aiSettings = aiAgentSettings(process.env as Record<string, string | undefined>)
+      await answerWithAIOrVoicemail(supabase, {
+        callId: callerCall.id,
+        aLegId: agentState.aLegId,
+        aiBrand: isAIAgentLabel(aiSettings, (pn as { label?: string } | null)?.label),
+        context: "no agent answered",
+      })
     }
     return
   }

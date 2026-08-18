@@ -4,6 +4,8 @@ import {
   isAIAgentLabel,
   brandNameForLabel,
   conversationMessagesToSegments,
+  parseAIRingTimeoutSecs,
+  DEFAULT_AI_RING_TIMEOUT_SECS,
 } from "./ai-agent"
 
 describe("aiAgentSettings", () => {
@@ -18,12 +20,45 @@ describe("aiAgentSettings", () => {
   it("parses and normalizes labels", () => {
     expect(
       aiAgentSettings({ TELNYX_AI_ASSISTANT_ID: "a-1", AI_AGENT_LABELS: " tlp , Str " })
-    ).toEqual({ assistantId: "a-1", labels: ["TLP", "STR"] })
+    ).toEqual({
+      assistantId: "a-1",
+      labels: ["TLP", "STR"],
+      ringTimeoutSecs: DEFAULT_AI_RING_TIMEOUT_SECS,
+    })
+  })
+
+  it("carries the configured ring timeout", () => {
+    expect(
+      aiAgentSettings({
+        TELNYX_AI_ASSISTANT_ID: "a-1",
+        AI_AGENT_LABELS: "TLP",
+        AI_AGENT_RING_TIMEOUT_SECS: "15",
+      })?.ringTimeoutSecs
+    ).toBe(15)
+  })
+})
+
+describe("parseAIRingTimeoutSecs", () => {
+  it("defaults when unset or unparseable", () => {
+    expect(parseAIRingTimeoutSecs(undefined)).toBe(DEFAULT_AI_RING_TIMEOUT_SECS)
+    expect(parseAIRingTimeoutSecs("")).toBe(DEFAULT_AI_RING_TIMEOUT_SECS)
+    expect(parseAIRingTimeoutSecs("soon")).toBe(DEFAULT_AI_RING_TIMEOUT_SECS)
+  })
+
+  it("clamps so agents always get a real ring and callers never wait forever", () => {
+    expect(parseAIRingTimeoutSecs("0")).toBe(5)
+    expect(parseAIRingTimeoutSecs("-30")).toBe(5)
+    expect(parseAIRingTimeoutSecs("600")).toBe(60)
+  })
+
+  it("accepts sensible values as-is", () => {
+    expect(parseAIRingTimeoutSecs("15")).toBe(15)
+    expect(parseAIRingTimeoutSecs(" 25 ")).toBe(25)
   })
 })
 
 describe("isAIAgentLabel", () => {
-  const settings = { assistantId: "a-1", labels: ["TLP"] }
+  const settings = { assistantId: "a-1", labels: ["TLP"], ringTimeoutSecs: 20 }
   it("matches case-insensitively and rejects everything else", () => {
     expect(isAIAgentLabel(settings, "tlp")).toBe(true)
     expect(isAIAgentLabel(settings, "TLP")).toBe(true)

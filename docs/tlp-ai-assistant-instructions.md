@@ -122,6 +122,27 @@ sentence only if you have decided you don't want it.
 
 ---
 
+## §2.5 When the assistant actually picks up (changed 2026-08-19)
+
+It no longer answers every TLP call. Agents ring first, and the assistant only
+takes the call where the caller would otherwise have reached voicemail:
+
+1. Nobody online in the web app and no mobile device flagged available.
+2. Every agent dial failed.
+3. Agents rang but nobody answered within `AI_AGENT_RING_TIMEOUT_SECS`
+   (default 20s; non-AI brands still ring 25s and still go to voicemail).
+
+Two consequences worth knowing:
+
+- **The transfer tool will rarely fire.** `agents_available` is read at the
+  moment the assistant starts, and in cases 1 and 2 no agent is reachable by
+  definition. Only case 3 can produce a live call where an agent is technically
+  online, so the TRANSFERS paragraph in §1 stays correct but will seldom apply.
+- **The greeting doesn't know the caller waited.** In case 3 someone hears 20
+  seconds of ringing and is then greeted as if they'd just dialled. Fixing that
+  means passing a dynamic variable on assistant start and branching the greeting
+  — not done yet.
+
 ## §3 What this assistant can and cannot do
 
 Worth being blunt, because the gap matters operationally.

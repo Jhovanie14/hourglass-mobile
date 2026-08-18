@@ -5,6 +5,20 @@
 export type AIAgentSettings = {
   assistantId: string
   labels: string[] // normalized upper-case phone_numbers.label values
+  ringTimeoutSecs: number // how long AI-brand calls ring agents before the AI takes over
+}
+
+/** Agents get this long to pick up on an AI-enabled brand before the assistant
+ *  catches the call. Deliberately shorter than the 25s used by brands with no
+ *  AI behind them, but not so short that a push-woken mobile agent never gets a
+ *  real ring — the FCM wake happens inside this window. */
+export const DEFAULT_AI_RING_TIMEOUT_SECS = 20
+
+/** Clamped so a typo in env can't ring forever or skip the agents entirely. */
+export function parseAIRingTimeoutSecs(raw: string | undefined): number {
+  const parsed = Number.parseInt((raw ?? "").trim(), 10)
+  if (!Number.isFinite(parsed)) return DEFAULT_AI_RING_TIMEOUT_SECS
+  return Math.min(60, Math.max(5, parsed))
 }
 
 /** The feature is live only when BOTH the assistant id and at least one label
@@ -12,6 +26,7 @@ export type AIAgentSettings = {
 export function aiAgentSettings(env: {
   TELNYX_AI_ASSISTANT_ID?: string
   AI_AGENT_LABELS?: string
+  AI_AGENT_RING_TIMEOUT_SECS?: string
 }): AIAgentSettings | null {
   const assistantId = env.TELNYX_AI_ASSISTANT_ID?.trim()
   if (!assistantId) return null
@@ -20,7 +35,11 @@ export function aiAgentSettings(env: {
     .map((label) => label.trim().toUpperCase())
     .filter(Boolean)
   if (labels.length === 0) return null
-  return { assistantId, labels }
+  return {
+    assistantId,
+    labels,
+    ringTimeoutSecs: parseAIRingTimeoutSecs(env.AI_AGENT_RING_TIMEOUT_SECS),
+  }
 }
 
 /** Case-insensitive membership test against phone_numbers.label. */

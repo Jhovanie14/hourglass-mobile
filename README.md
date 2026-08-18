@@ -275,8 +275,11 @@ See `docs/superpowers/specs/2026-07-07-jades-event-integration-design.md`.
 
 ## AI voice agent (TLP test)
 
-Inbound calls to brands listed in `AI_AGENT_LABELS` are answered by a Telnyx
-AI Assistant instead of ringing agents. The call is recorded (dual channel);
+Inbound calls to brands listed in `AI_AGENT_LABELS` ring their agents first and
+fall to a Telnyx AI Assistant only when a human isn't going to take the call:
+nobody online or available on mobile, every dial failing, or nobody answering
+within `AI_AGENT_RING_TIMEOUT_SECS`. On every other brand those three cases still
+go to voicemail, unchanged. The call is recorded (dual channel);
 when the conversation ends, the full transcript is stored in
 `call_transcript_segments` (visible in the dashboard call history) and posted
 to Slack, followed by a signed recording link. If insights are configured on
@@ -288,6 +291,7 @@ the assistant in the Telnyx portal, an AI summary message is posted too.
 |---|---|
 | `TELNYX_AI_ASSISTANT_ID` | Assistant ID from Telnyx portal → AI → AI Assistants |
 | `AI_AGENT_LABELS` | Comma-separated `phone_numbers.label` values to enable (e.g. `TLP`) |
+| `AI_AGENT_RING_TIMEOUT_SECS` | Optional; how long agents ring on an AI brand before the assistant takes over. Default 20, clamped to 5–60. Non-AI brands always use 25. Don't go far below 20: mobile agents are woken by FCM push, and that wake happens inside this window |
 | `AI_BRAND_NAMES` | Optional label→spoken-name map, e.g. `TLP:The Launch Pad` — used by the AI's greeting and Slack headers |
 | `SLACK_WEBHOOK_URL` | Slack incoming-webhook URL for transcripts |
 | `SLACK_WEBHOOK_URL_<LABEL>` | Optional per-brand override (e.g. `SLACK_WEBHOOK_URL_TLP`) |

@@ -30,6 +30,11 @@ export async function answerCaller(callControlId: string): Promise<void> {
  *  leg's call_control_id so the caller can record it in call_agent_legs.
  *  `from` MUST be the owned DID the customer dialed (un-owned `from` is
  *  rejected); the caller's number is shown via from_display_name. */
+/** Ring time for brands with no AI behind them: nobody picking up means
+ *  voicemail either way, so there is nothing to gain by giving up sooner.
+ *  AI-enabled brands pass a shorter value (see aiAgentSettings). */
+export const DEFAULT_RING_TIMEOUT_SECS = 25
+
 export async function dialAgentLeg(params: {
   aLegId: string
   callId: string
@@ -37,6 +42,7 @@ export async function dialAgentLeg(params: {
   callerNumber: string // customer's number, shown as caller ID
   sipUsername: string // THIS agent's sip_username (agent_sip_credentials)
   userId: string // THIS agent's user_id
+  timeoutSecs?: number // ring time before this leg gives up
 }): Promise<string> {
   const telnyx = getTelnyxClient()
   const appId = process.env.TELNYX_VOICE_APP_ID
@@ -55,7 +61,7 @@ export async function dialAgentLeg(params: {
       // WebRTC client either, so pass the customer's number as a custom SIP header
       // the softphone reads to show who's actually calling.
       custom_headers: [{ name: "X-Caller-Number", value: params.callerNumber }],
-      timeout_secs: 25,
+      timeout_secs: params.timeoutSecs ?? DEFAULT_RING_TIMEOUT_SECS,
       command_id: commandId(),
       client_state: encodeClientState({
         role: "agent",
