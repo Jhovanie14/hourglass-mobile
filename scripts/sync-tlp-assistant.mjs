@@ -189,11 +189,34 @@ async function main() {
   const insightId = await ensureInsight(apiKey)
   const groupId = await ensureGroup(apiKey, insightId)
 
-  await telnyx(apiKey, "PUT", `/ai/assistants/${assistantId}`, {
+  // Assistants update with POST, not PUT — a PUT here 404s, which reads like a
+  // bad assistant id rather than a bad verb. (Insights genuinely do use PUT.)
+  await telnyx(apiKey, "POST", `/ai/assistants/${assistantId}`, {
     instructions,
     insight_settings: { insight_group_id: groupId },
   })
   console.log(`↻ assistant ${assistantId} updated (instructions + insight group ${groupId})`)
+
+  // Read it back. Telnyx does not document whether a partial POST merges or
+  // replaces, and this assistant carries a greeting, voice settings and the
+  // dynamic-variables webhook that nothing here sends. If a field below comes
+  // back MISSING, the update replaced rather than merged — restore from the
+  // backup rather than guessing at the values.
+  const { data: after } = await telnyx(apiKey, "GET", `/ai/assistants/${assistantId}`)
+  const checks = [
+    ["instructions", after.instructions?.length === instructions.length],
+    ["insight group", after.insight_settings?.insight_group_id === groupId],
+    ["greeting", Boolean(after.greeting)],
+    ["voice", Boolean(after.voice_settings?.voice)],
+    ["dynamic variables webhook", Boolean(after.dynamic_variables_webhook_url)],
+    ["model", Boolean(after.model)],
+  ]
+  console.log("\nverifying:")
+  for (const [name, ok] of checks) console.log(`  ${ok ? "✓" : "✗ MISSING"} ${name}`)
+  if (checks.some(([, ok]) => !ok)) {
+    throw new Error("assistant is missing fields after the update — see the backup before recalling")
+  }
+  console.log(`\nassistant instructions are now ${after.instructions.length} chars (was 8282).`)
 }
 
 // Only run when invoked directly, so extractInstructions stays unit-testable.
