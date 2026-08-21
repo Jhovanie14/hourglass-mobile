@@ -6,7 +6,7 @@ import { formatDuration } from "@/lib/format-duration"
 export type SlackMessage = { text: string; blocks: Record<string, unknown>[] }
 
 const SECTION_CHAR_BUDGET = 2800 // Slack caps section text at 3000 chars
-const MAX_TRANSCRIPT_BLOCKS = 12 // well under Slack's 50-block message cap
+const MAX_BLOCKS = 45 // well under Slack's 50-block message cap
 
 /** Env key per brand: SLACK_WEBHOOK_URL_TLP beats SLACK_WEBHOOK_URL. */
 export function slackWebhookForLabel(
@@ -62,15 +62,121 @@ function chunkLines(lines: string[], budget = SECTION_CHAR_BUDGET): string[] {
   return chunks
 }
 
-export function buildAICallMessage(args: {
+export function buildAIRecordingMessage(args: {
+  brandLabel: string
+  caller: string
+  url: string
+  expiresInDays: number
+}): SlackMessage {
+  const text = `🎙 *Recording — AI call · ${args.brandLabel}* (${escapeSlackText(args.caller)})\n<${args.url}|Listen> — link expires in ${args.expiresInDays} days`
+  return {
+    text: `Recording — AI call · ${args.brandLabel} · ${args.caller}`,
+    blocks: [section(text)],
+  }
+}
+
+/** The structured post-call insight we ask Telnyx for. Every field is optional:
+ *  the model may legitimately have nothing to say, and one missing field must
+ *  never cost us the whole Slack post. */
+export type AICallSummary = {
+  why_they_called?: string
+  what_the_ai_did?: string
+  outcome?: string
+  knowledge_gaps?: string[]
+  at_risk?: string[]
+}
+
+const TEXT_FIELDS = ["why_they_called", "what_the_ai_did", "outcome"] as const
+const LIST_FIELDS = ["knowledge_gaps", "at_risk"] as const
+
+/** A model asked for an array will sometimes hand back a single string. Blank
+ *  entries are dropped so an empty slot never renders as a stray bullet. */
+function toStringList(value: unknown): string[] | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed === "" ? [] : [trimmed]
+  }
+  if (!Array.isArray(value)) return null
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "")
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      return asObject(JSON.parse(value))
+    } catch {
+      return null // prose insight, or truncated JSON — the caller falls back
+    }
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+/**
+ * Telnyx insight results → our summary shape, or null when nothing in the array
+ * matches it. Null is the signal to render the raw insight text instead, which
+ * is what stops an insight-group change from silently emptying Slack.
+ */
+export function parseAISummaryResult(
+  results: Array<{ insight_id?: string; result?: unknown }> | null | undefined
+): AICallSummary | null {
+  for (const { result } of results ?? []) {
+    const raw = asObject(result)
+    if (!raw) continue
+
+    const summary: AICallSummary = {}
+    let hasContent = false
+
+    for (const field of TEXT_FIELDS) {
+      const value = raw[field]
+      if (typeof value !== "string") continue
+      const trimmed = value.trim()
+      if (trimmed === "") continue
+      summary[field] = trimmed
+      hasContent = true
+    }
+    for (const field of LIST_FIELDS) {
+      const list = toStringList(raw[field])
+      if (list === null) continue
+      summary[field] = list
+      if (list.length > 0) hasContent = true
+    }
+
+    if (hasContent) return summary
+  }
+  return null
+}
+
+/** Heading + body as one or more ≤budget sections, so a long field can never
+ *  breach Slack's 3000-char section cap. */
+function labeledSection(heading: string, lines: string[]): Record<string, unknown>[] {
+  return chunkLines([heading, ...lines]).map(section)
+}
+
+function bullets(entries: string[]): string[] {
+  return entries.map((entry) => `• ${escapeSlackText(entry)}`)
+}
+
+/**
+ * The one Slack message per AI call. The team asked for summaries rather than
+ * transcripts, so the transcript now stops at the dashboard and this card
+ * carries the "what we're missing" note — printed on every call, flagged or
+ * not, because an absent note reads as "nothing to report" when what it really
+ * means is "nobody looked".
+ */
+export function buildAISummaryMessage(args: {
   brandLabel: string
   caller: string
   durationSec: number | null
-  endedReason?: string | null
-  segments: Array<{ speaker: "agent" | "contact" | null; transcript: string }>
+  results: Array<{ insight_id?: string; result?: unknown }> | null | undefined
   dashboardUrl?: string | null
 }): SlackMessage {
   const duration = formatDuration(args.durationSec ?? 0)
+  const summary = parseAISummaryResult(args.results)
+
   const blocks: Record<string, unknown>[] = [
     {
       type: "header",
@@ -86,57 +192,52 @@ export function buildAICallMessage(args: {
     { type: "divider" },
   ]
 
-  const lines = args.segments.map((segment) => {
-    const label =
-      segment.speaker === "agent" ? "AI" : segment.speaker === "contact" ? "Caller" : "—"
-    return `*${label}:* ${escapeSlackText(segment.transcript)}`
-  })
-
-  if (lines.length === 0) {
-    blocks.push(section("_No transcript captured._"))
-  } else {
-    const chunks = chunkLines(lines)
-    for (const chunk of chunks.slice(0, MAX_TRANSCRIPT_BLOCKS)) blocks.push(section(chunk))
-    if (chunks.length > MAX_TRANSCRIPT_BLOCKS) {
-      blocks.push(context("Transcript truncated — open the dashboard for the rest."))
+  if (summary) {
+    const { why_they_called, what_the_ai_did, outcome } = summary
+    if (why_they_called) {
+      blocks.push(...labeledSection("*Why they called*", [escapeSlackText(why_they_called)]))
     }
+    if (what_the_ai_did) {
+      blocks.push(...labeledSection("*What the AI did*", [escapeSlackText(what_the_ai_did)]))
+    }
+    if (outcome) {
+      blocks.push(...labeledSection("*Outcome*", [escapeSlackText(outcome)]))
+    }
+    const gaps = summary.knowledge_gaps ?? []
+    blocks.push(
+      ...labeledSection(
+        "⚠️ *What we're missing*",
+        gaps.length > 0 ? bullets(gaps) : ["_Nothing flagged._"]
+      )
+    )
+    const atRisk = summary.at_risk ?? []
+    if (atRisk.length > 0) blocks.push(...labeledSection("💸 *At risk*", bullets(atRisk)))
+  } else {
+    // No structured insight: print whatever Telnyx did return rather than
+    // nothing, so a prompt or insight-group change degrades to noisy, not blank.
+    const raw = (args.results ?? []).map(({ result }) =>
+      typeof result === "string" ? escapeSlackText(result) : escapeSlackText(JSON.stringify(result))
+    )
+    blocks.push(...labeledSection("*Summary*", raw.length > 0 ? raw : ["_No summary generated._"]))
+    blocks.push(
+      ...labeledSection("⚠️ *What we're missing*", [
+        "_Not captured — the insight didn't return the structured fields._",
+      ])
+    )
   }
 
-  const footer: string[] = []
-  if (args.endedReason) footer.push(`Ended: ${escapeSlackText(args.endedReason)}`)
-  if (args.dashboardUrl) footer.push(`<${args.dashboardUrl}|Open dashboard>`)
-  if (footer.length > 0) blocks.push(context(footer.join(" · ")))
+  const trimmed = blocks.slice(0, MAX_BLOCKS)
+  if (blocks.length > MAX_BLOCKS) {
+    trimmed.push(context("Summary truncated — open the dashboard for the rest."))
+  }
+  if (args.dashboardUrl) {
+    trimmed.push(context(`<${args.dashboardUrl}|Open dashboard for the full transcript>`))
+  }
 
   return {
     text: `AI call · ${args.brandLabel} · ${args.caller} (${duration})`,
-    blocks,
+    blocks: trimmed,
   }
-}
-
-export function buildAIRecordingMessage(args: {
-  brandLabel: string
-  caller: string
-  url: string
-  expiresInDays: number
-}): SlackMessage {
-  const text = `🎙 *Recording — AI call · ${args.brandLabel}* (${escapeSlackText(args.caller)})\n<${args.url}|Listen> — link expires in ${args.expiresInDays} days`
-  return {
-    text: `Recording — AI call · ${args.brandLabel} · ${args.caller}`,
-    blocks: [section(text)],
-  }
-}
-
-export function buildAISummaryMessage(args: {
-  brandLabel: string
-  caller: string
-  results: Array<{ insight_id?: string; result?: unknown }>
-}): SlackMessage {
-  const lines = args.results.map(({ result }) =>
-    typeof result === "string" ? escapeSlackText(result) : escapeSlackText(JSON.stringify(result))
-  )
-  const [first] = chunkLines(lines)
-  const text = `📋 *AI summary · ${args.brandLabel}* (${escapeSlackText(args.caller)})\n${first ?? "_empty_"}`
-  return { text: `AI summary · ${args.brandLabel} · ${args.caller}`, blocks: [section(text)] }
 }
 
 /** POST to an incoming webhook. Throws on non-2xx so callers can log. */

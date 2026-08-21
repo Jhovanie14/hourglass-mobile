@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:extension": "node scripts/package-extension.mjs"
+    "package:extension": "node scripts/package-extension.mjs",
+    "sync:assistant": "node scripts/sync-tlp-assistant.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

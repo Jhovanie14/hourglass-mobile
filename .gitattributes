@@ -1,0 +1,6 @@
+# core.autocrlf is on, so a fresh checkout hands every file CRLF. Vitest does
+# not transform .mjs — it passes the source straight to V8, which rejects CRLF
+# with "SyntaxError: Invalid or unexpected token". That broke
+# scripts/sync-tlp-assistant.test.mjs on checkout while it passed locally, so
+# .mjs is pinned to LF. (.ts is fine either way: esbuild normalizes it.)
+*.mjs text eol=lf

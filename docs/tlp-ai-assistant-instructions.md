@@ -1,11 +1,21 @@
 # TLP AI Receptionist — Assistant Instructions
 
-Paste the block in **§1** into the TLP assistant's `instructions` field in
-Telnyx Mission Control (AI → AI Assistants → TLP assistant → Instructions).
+**Do not paste this file into the Telnyx portal.** Run `npm run sync:assistant`
+instead: it extracts the fenced block in §1 — and nothing else — and PUTs it to
+the assistant's `instructions` field, along with the call-summary insight. Use
+`npm run sync:assistant -- --dry-run` to see what it would send.
 
-**Decisions to make before pasting:** the two blocks marked `[OPTIONAL]` in §2
-are policy calls, not technical ones. Read §3 first — it explains what the
-assistant can and cannot actually do today.
+That script exists because the manual step went wrong. On 2026-08-19 the live
+assistant was found holding all 8,282 characters of this document: the "paste
+the block" instruction, the `[OPTIONAL]` policy notes, the open questions, the
+lot. The AI had been reading its own to-do list back to callers as context,
+which is the likeliest reason it sounded generic and hedgy.
+`scripts/sync-tlp-assistant.test.mjs` now fails if the extraction ever picks up
+the meta text again.
+
+**Decisions to make before syncing:** the block marked `[OPTIONAL]` in §2 is a
+policy call, not a technical one. Read §3 first — it explains what the assistant
+can and cannot actually do today.
 
 ## Dynamic variables it relies on
 
@@ -16,7 +26,7 @@ All three are supplied at conversation start by
 |---|---|---|
 | `{{ pricing }}` | text block | `lib/tlp-pricing.ts` → `pricingText()` |
 | `{{ agents_available }}` | boolean | `getOnlineReachableAgents()` |
-| `{{ targets }}` | array | consumed by the transfer tool, not referenced in prose |
+| `{{ targets }}` | array | built for the transfer tool — **unused today**, since no such tool is configured (see §3) |
 
 If the webhook fails, Telnyx falls back to the assistant's **default** values.
 Set those defaults to `agents_available: false` and `targets: []`. Leave the
@@ -36,15 +46,26 @@ Keep every reply short and natural — one or two sentences. You are speaking, n
 writing: no lists, no bullet points, no reading out punctuation. If a caller
 needs several prices, give the two most relevant and offer the rest.
 
+HOW TO BE CONSISTENT
+Handle the same request the same way every time.
+- Ask one question at a time and wait for the answer.
+- Use the exact service names from the pricing block. Never shorten them,
+  pluralise them, or invent a name for a service.
+- Quote a price once and do not restate it differently later in the call.
+- Read every phone number back digit by digit and wait for confirmation.
+- When you cannot help, say plainly what you do not have, then offer to take a
+  message. Do not apologise repeatedly and do not pad the answer.
+- Before the call ends, ask whether there is anything else.
+
 PRICING
 Current prices:
 {{ pricing }}
 
 Quote only from that block. If a caller asks about a service or a price that is
-not in it, say you don't have that one to hand and offer to take a message or
-transfer them. Never estimate, never round, and never invent a price or a
-service name. If the pricing block is empty, say you can't quote prices right
-now and offer to take a message.
+not in it, say you don't have that one to hand and offer to take a message.
+Never estimate, never round, and never invent a price or a service name. If the
+pricing block is empty, say you can't quote prices right now and offer to take a
+message.
 
 Two things callers get confused about, so be explicit:
 - The Quick Service membership includes wheels and tires shine. The one-time
@@ -68,11 +89,12 @@ to confirm. Never say a booking is made, confirmed, reserved, or scheduled, and
 never give an appointment time.
 
 TRANSFERS
-If the caller asks to speak to a person and agents_available is true, use the
-transfer tool. If agents_available is false, tell them no one is available right
-now, offer to take a message, and collect their name, number and reason for
-calling. Do not promise a transfer you cannot make, and do not offer a transfer
-unless they ask for one.
+You cannot transfer this call. You are only on the line because the team's
+phones rang first and nobody picked up, and you have no way to reach them from
+here. If the caller asks for a person, tell them nobody is available right now,
+offer to take a message, and collect their name, number and reason for calling.
+Never say you are connecting them, putting them through, transferring them, or
+finding someone — you are not, and the caller will be left listening to silence.
 
 COMMERCIAL VEHICLES
 The Quick Service, Express Detail and Self-Service Bay memberships are for
@@ -82,8 +104,7 @@ the Commercial Wash plan instead — quote that from the pricing block.
 Commercial Wash is an exterior wash: hand wash, wheels and tires shine, towel
 dry, unlimited washes. Do not tell a commercial caller that interior cleaning is
 included. If they ask specifically about interior work on a commercial vehicle,
-say you'll have someone confirm what's covered, and take a message or transfer
-them.
+say you'll have someone confirm what's covered, and take a message.
 
 TAKING A MESSAGE
 Collect name, callback number, and the reason for calling. Read the number back
@@ -134,10 +155,12 @@ takes the call where the caller would otherwise have reached voicemail:
 
 Two consequences worth knowing:
 
-- **The transfer tool will rarely fire.** `agents_available` is read at the
-  moment the assistant starts, and in cases 1 and 2 no agent is reachable by
-  definition. Only case 3 can produce a live call where an agent is technically
-  online, so the TRANSFERS paragraph in §1 stays correct but will seldom apply.
+- **There is no transfer tool at all** (verified 2026-08-22, `tools: []`), and
+  even if there were, `agents_available` is a snapshot from the moment the
+  assistant starts — false by construction in cases 1 and 2. Only case 3 can
+  produce a live call where an agent is online, and only if they came back
+  during the conversation. §1 now tells the caller plainly that nobody can be
+  reached; Track B replaces that with a live check.
 - **The greeting doesn't know the caller waited.** In case 3 someone hears 20
   seconds of ringing and is then greeted as if they'd just dialled. Fixing that
   means passing a dynamic variable on assistant start and branching the greeting
@@ -148,11 +171,18 @@ Two consequences worth knowing:
 Worth being blunt, because the gap matters operationally.
 
 **It can:** answer questions, quote the prices in `{{ pricing }}`, explain what
-each service includes and excludes, transfer to an online agent, and take a
-message.
+each service includes and excludes, and take a message.
 
 **It cannot:**
 
+0. **Transfer a call.** Verified against the live assistant on 2026-08-22:
+   `tools` is an empty array. The transfer tool designed in
+   `docs/superpowers/specs/2026-08-18-tlp-ai-transfer-to-agent-design.md` was
+   never added in the portal, so the old TRANSFERS paragraph — "use the transfer
+   tool" — described a capability that does not exist. A caller who asked for a
+   human was told they were being connected and then heard nothing. §1 now says
+   plainly that it cannot transfer. Restoring the capability is Track B:
+   `docs/superpowers/specs/2026-08-22-tlp-ai-live-agent-handoff-design.md`.
 1. **Book anything.** No booking system is connected. The instructions
    deliberately forbid it from implying otherwise, because a caller who believes
    they have an appointment and turns up to nothing is worse than one who was
@@ -204,3 +234,37 @@ more than expected.
 **To change it:** confirm which is right. If interior is genuinely included, add
 the three interior items to the `Commercial Wash` entry's `includes`, drop
 `"Exterior only"` from its `notes`, and update the two assertions in the test.
+
+## §6 The Slack summary (added 2026-08-22)
+
+Slack no longer receives the `AI:` / `Caller:` transcript — the agents team
+asked for a hand-off note instead, and the transcript stays in the dashboard.
+
+One message per call is built by `buildAISummaryMessage` in `lib/slack.ts` from
+a **single structured insight**, defined in `scripts/sync-tlp-assistant.mjs` and
+attached to the assistant as the "TLP Receptionist" insight group. One insight
+rather than several, because separate insights can arrive half-populated and the
+format drifts between calls; one JSON schema cannot.
+
+| Field | Renders as | Empty when |
+|---|---|---|
+| `why_they_called` | *Why they called* | omitted |
+| `what_the_ai_did` | *What the AI did* | omitted |
+| `outcome` | *Outcome* | omitted |
+| `knowledge_gaps` | ⚠️ *What we're missing* | still printed, as "Nothing flagged" |
+| `at_risk` | 💸 *At risk* | omitted |
+
+`knowledge_gaps` prints on **every** call, flagged or not. An absent note reads
+as "nothing to report" when what it usually means is "nobody looked", and the
+whole point of the section is to show what to add to §1 next.
+
+Two failure modes are handled rather than hidden. If the insight returns prose
+instead of the schema — which is what the stock Telnyx "Default" group did until
+2026-08-22 — the raw text is posted under *Summary* rather than an empty card.
+If Telnyx never generates an insight at all, no Slack message is posted and
+`⚠️ AI summary ready but no Slack webhook is configured` / a missing
+`📋 AI summary posted` line in the Vercel log is the signal; the call itself is
+still complete in the dashboard.
+
+**Changing the fields means changing three things together:** the schema in the
+script, `AICallSummary` in `lib/slack.ts`, and the tests in `lib/slack.test.ts`.

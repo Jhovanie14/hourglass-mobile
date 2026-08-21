@@ -9,6 +9,7 @@ export default defineConfig({
       "extension/**/*.test.ts",
       "components/**/*.test.ts",
       "app/**/*.test.ts",
+      "scripts/**/*.test.mjs",
     ],
   },
   resolve: {

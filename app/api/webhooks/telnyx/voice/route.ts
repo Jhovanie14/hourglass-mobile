@@ -23,7 +23,6 @@ import {
 } from "@/lib/telnyx/ai-agent"
 import {
   slackWebhookForLabel,
-  buildAICallMessage,
   buildAIRecordingMessage,
   buildAISummaryMessage,
   postToSlack,
@@ -771,7 +770,7 @@ async function handleConversationEnded(
 ) {
   const { data: call } = await supabase
     .from("calls")
-    .select("id, contact_number, ai_handled, ai_conversation_id, phone_numbers(label)")
+    .select("id, ai_handled, ai_conversation_id")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
   if (!call?.ai_handled) return // not an AI-handled call — nothing to do
@@ -782,9 +781,6 @@ async function handleConversationEnded(
     console.warn("⚠️ call.conversation.ended without conversation_id:", payload.call_control_id)
     return
   }
-
-  const pn = Array.isArray(call.phone_numbers) ? call.phone_numbers[0] : call.phone_numbers
-  const brandLabel = (pn as { label: string } | null)?.label ?? "Unknown"
 
   const messages: ConversationMessage[] = []
   try {
@@ -820,42 +816,22 @@ async function handleConversationEnded(
     .eq("id", call.id)
   if (markError) console.error("⚠️ Failed to mark AI conversation processed:", markError)
 
-  const env = process.env as Record<string, string | undefined>
-  const webhook = slackWebhookForLabel(brandLabel, env)
-  if (!webhook) {
-    console.warn("⚠️ AI call finished but no Slack webhook is configured")
-    return
-  }
-  const base = env.APP_BASE_URL?.replace(/\/+$/, "")
-  try {
-    await postToSlack(
-      webhook,
-      buildAICallMessage({
-        brandLabel: brandNameForLabel(brandLabel, env),
-        caller: call.contact_number,
-        durationSec: payload.duration_sec ?? null,
-        endedReason: payload.reason ?? null,
-        segments,
-        dashboardUrl: base ? `${base}/dashboard/calls` : null,
-      })
-    )
-    console.log(
-      `💬 AI transcript posted to Slack for call ${call.id} (${segments.length} segments)`
-    )
-  } catch (err) {
-    console.error("⚠️ Failed to post AI transcript to Slack:", err)
-  }
+  // Deliberately no Slack post here. The team asked for summaries, not
+  // transcripts, so the transcript stops at the dashboard and Slack is served
+  // by handleConversationInsights below.
+  console.log(`💬 AI transcript stored for call ${call.id} (${segments.length} segments)`)
 }
 
-/** Post-call insights (summary etc.) — only fires when insights are
- *  configured on the assistant in the Telnyx portal. */
+/** Post-call insights → the one Slack message per AI call. Fires only when an
+ *  insight group is attached to the assistant; if Telnyx never generates one
+ *  the call is still complete in the dashboard, and the warning below says so. */
 async function handleConversationInsights(supabase: SupabaseClient, payload: TelnyxCallPayload) {
   const results = payload.results
   if (!results || results.length === 0) return
 
   const { data: call } = await supabase
     .from("calls")
-    .select("id, contact_number, ai_handled, phone_numbers(label)")
+    .select("id, contact_number, ai_handled, duration_seconds, phone_numbers(label)")
     .eq("telnyx_call_id", payload.call_control_id)
     .maybeSingle()
   if (!call?.ai_handled) return
@@ -865,16 +841,25 @@ async function handleConversationInsights(supabase: SupabaseClient, payload: Tel
 
   const env = process.env as Record<string, string | undefined>
   const webhook = slackWebhookForLabel(brandLabel, env)
-  if (!webhook) return
+  if (!webhook) {
+    console.warn("⚠️ AI summary ready but no Slack webhook is configured")
+    return
+  }
+  const base = env.APP_BASE_URL?.replace(/\/+$/, "")
   try {
     await postToSlack(
       webhook,
       buildAISummaryMessage({
         brandLabel: brandNameForLabel(brandLabel, env),
         caller: call.contact_number,
+        // handleCallHangup writes duration_seconds; payload.duration_sec covers
+        // the window where the insight beats that write.
+        durationSec: call.duration_seconds ?? payload.duration_sec ?? null,
         results,
+        dashboardUrl: base ? `${base}/dashboard/calls` : null,
       })
     )
+    console.log(`📋 AI summary posted to Slack for call ${call.id}`)
   } catch (err) {
     console.error("⚠️ Failed to post AI summary to Slack:", err)
   }
