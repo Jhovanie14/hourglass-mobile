@@ -95,7 +95,11 @@ export function extractInstructions(markdown) {
   const start = markdown.indexOf("\n", open) + 1
   const close = markdown.indexOf("```", start)
   if (close === -1) throw new Error("docs: §1 fenced block is never closed")
-  const block = markdown.slice(start, close).trim()
+  // core.autocrlf hands us CRLF on checkout. Send LF: the model has no use for
+  // carriage returns, and leaving them in makes the byte count differ from what
+  // we sent, which turns the post-update verification into a permanent false
+  // alarm.
+  const block = markdown.slice(start, close).replaceAll("\r\n", "\n").trim()
   if (block.length === 0) throw new Error("docs: §1 fenced block is empty")
   if (block.includes("Paste the block in")) {
     throw new Error("docs: extracted the meta text, not the prompt — check the §1 heading")
@@ -202,7 +206,11 @@ async function main() {
   // dynamic-variables webhook that nothing here sends. If a field below comes
   // back MISSING, the update replaced rather than merged — restore from the
   // backup rather than guessing at the values.
-  const { data: after } = await telnyx(apiKey, "GET", `/ai/assistants/${assistantId}`)
+  // Assistants come back at the top level; insights come back under `data`.
+  // Reading `.data` here cost a sync run to a TypeError after the update had
+  // already succeeded, so accept either shape.
+  const body = await telnyx(apiKey, "GET", `/ai/assistants/${assistantId}`)
+  const after = body?.data ?? body
   const checks = [
     ["instructions", after.instructions?.length === instructions.length],
     ["insight group", after.insight_settings?.insight_group_id === groupId],

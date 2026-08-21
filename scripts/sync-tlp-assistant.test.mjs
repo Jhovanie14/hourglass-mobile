@@ -6,6 +6,8 @@ import { extractInstructions } from "./sync-tlp-assistant.mjs"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const DOC = readFileSync(resolve(ROOT, "docs/tlp-ai-assistant-instructions.md"), "utf8")
+const CR = String.fromCharCode(13)
+const FENCE = "`".repeat(3)
 
 describe("extractInstructions", () => {
   // The regression this whole script exists for: on 2026-08-19 the live
@@ -34,6 +36,15 @@ describe("extractInstructions", () => {
     }
   })
 
+  // Telnyx stores what we send. Leaving CRLF in makes the stored length differ
+  // from the sent length, which turned the post-update verification into a
+  // permanent false alarm on the first real sync.
+  it("sends LF only, so the stored length matches what we sent", () => {
+    expect(extractInstructions(DOC)).not.toContain(CR)
+    const crlfDoc = ["## §1 Instructions block", FENCE, "abc", "def", FENCE].join(CR + "\n")
+    expect(extractInstructions(crlfDoc)).toBe("abc\ndef")
+  })
+
   it("does not promise a transfer the assistant has no tool for", () => {
     const block = extractInstructions(DOC)
     expect(block).toContain("You cannot transfer this call")
@@ -43,9 +54,11 @@ describe("extractInstructions", () => {
   it("throws rather than shipping the wrong text when the doc shape changes", () => {
     expect(() => extractInstructions("# no heading here")).toThrow(/heading not found/)
     expect(() => extractInstructions("## §1 Instructions block\n\nno fence")).toThrow(/no fenced/)
-    expect(() => extractInstructions("## §1 Instructions block\n```\nunclosed")).toThrow(
+    expect(() => extractInstructions(`## §1 Instructions block\n${FENCE}\nunclosed`)).toThrow(
       /never closed/
     )
-    expect(() => extractInstructions("## §1 Instructions block\n```\n\n```")).toThrow(/empty/)
+    expect(() => extractInstructions(`## §1 Instructions block\n${FENCE}\n\n${FENCE}`)).toThrow(
+      /empty/
+    )
   })
 })
