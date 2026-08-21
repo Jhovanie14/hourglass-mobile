@@ -127,25 +127,28 @@ export function parseAISummaryResult(
     const raw = asObject(result)
     if (!raw) continue
 
+    // Recognition is by shape, not by content. Telnyx enforces strict schemas,
+    // so the model must return all five fields on every call and signals "I
+    // have nothing" with an empty string or an empty array. Requiring content
+    // here would send a quiet call down the raw-JSON fallback path.
     const summary: AICallSummary = {}
-    let hasContent = false
+    let sawKnownField = false
 
     for (const field of TEXT_FIELDS) {
       const value = raw[field]
       if (typeof value !== "string") continue
+      sawKnownField = true
       const trimmed = value.trim()
-      if (trimmed === "") continue
-      summary[field] = trimmed
-      hasContent = true
+      if (trimmed !== "") summary[field] = trimmed
     }
     for (const field of LIST_FIELDS) {
       const list = toStringList(raw[field])
       if (list === null) continue
+      sawKnownField = true
       summary[field] = list
-      if (list.length > 0) hasContent = true
     }
 
-    if (hasContent) return summary
+    if (sawKnownField) return summary
   }
   return null
 }

@@ -57,9 +57,17 @@ nothing was at risk.
 Both arrays default to empty. Do not pad them with anything the caller did not
 actually raise.`
 
-/** Mirrors AICallSummary in lib/slack.ts — change both together. */
+/** Mirrors AICallSummary in lib/slack.ts — change both together.
+ *
+ *  Telnyx enforces OpenAI-style strict structured output: `additionalProperties`
+ *  must be false on every object, and `required` must list every property.
+ *  Omitting either is a 400 (code 10015). "Required" here means the key is
+ *  always present, not that it carries content — the model returns an empty
+ *  string or an empty array when it has nothing, which lib/slack.ts treats the
+ *  same as absent. */
 const INSIGHT_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     why_they_called: { type: "string", description: "The caller's reason, one sentence." },
     what_the_ai_did: { type: "string", description: "What the AI quoted, explained or collected." },

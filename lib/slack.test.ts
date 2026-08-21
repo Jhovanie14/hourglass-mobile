@@ -84,6 +84,20 @@ describe("parseAISummaryResult", () => {
     expect(parseAISummaryResult(undefined)).toBeNull()
   })
 
+  it("recognizes the shape even when strict mode fills every field with nothing", () => {
+    const empty = {
+      why_they_called: "",
+      what_the_ai_did: "",
+      outcome: "",
+      knowledge_gaps: [],
+      at_risk: [],
+    }
+    expect(parseAISummaryResult([{ result: empty }])).toEqual({
+      knowledge_gaps: [],
+      at_risk: [],
+    })
+  })
+
   it("coerces a stringified list into an array and drops blank entries", () => {
     const parsed = parseAISummaryResult([
       { result: { outcome: "x", knowledge_gaps: "Sunday hours", at_risk: ["", "  "] } },
@@ -144,6 +158,29 @@ describe("buildAISummaryMessage", () => {
     )
     expect(joined).toContain("What we're missing")
     expect(joined).toContain("Nothing flagged")
+  })
+
+  it("renders a clean card, not raw JSON, for an all-empty strict result", () => {
+    const joined = blockTexts(
+      buildAISummaryMessage({
+        ...baseArgs,
+        results: [
+          {
+            result: {
+              why_they_called: "",
+              what_the_ai_did: "",
+              outcome: "",
+              knowledge_gaps: [],
+              at_risk: [],
+            },
+          },
+        ],
+      })
+    )
+    expect(joined).toContain("What we're missing")
+    expect(joined).toContain("Nothing flagged")
+    expect(joined).not.toContain("why_they_called")
+    expect(joined).not.toContain("At risk")
   })
 
   it("omits the at-risk section when nothing is at risk", () => {
