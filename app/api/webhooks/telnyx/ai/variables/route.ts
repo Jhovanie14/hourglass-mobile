@@ -52,6 +52,13 @@ export async function POST(req: Request) {
     return failSafe()
   }
 
+  // SPIKE (2026-08-22, Track B unknown #1) — remove once answered.
+  // Nobody has ever looked at what Telnyx sends here. If this body carries the
+  // call_control_id, a webhook tool can act on the right call and the live
+  // agent handoff is buildable; if it doesn't, we need another route to call
+  // identity. See docs/superpowers/specs/2026-08-22-tlp-ai-live-agent-handoff-design.md
+  console.log("🔍 SPIKE ai/variables request body:", rawBody.slice(0, 2000))
+
   try {
     const supabase = createAdminClient()
     const agents = await getOnlineReachableAgents(supabase)
