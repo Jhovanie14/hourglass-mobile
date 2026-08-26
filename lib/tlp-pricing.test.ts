@@ -40,7 +40,7 @@ describe("TLP_PRICING", () => {
     expect(commercial.notes.join(" ")).toMatch(/exterior only/i)
   })
 
-  it("carries only the six active one-time services", () => {
+  it("carries only the active one-time services", () => {
     expect(TLP_PRICING.oneTimeServices.map((s) => s.name)).toEqual([
       "Quick Exterior Wash",
       "Quick Interior Refresh",
@@ -48,7 +48,28 @@ describe("TLP_PRICING", () => {
       "Express Exterior Detail",
       "Express Interior Detail",
       "Express Complete Detail",
+      "Self-Service Bay",
     ])
+  })
+
+  it("offers the self-service bay pay-per-use as well as by membership", () => {
+    // A caller who does not want a membership can still wash: $10 a visit.
+    const payPerUse = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Bay")!
+    expect(payPerUse.price).toBe(10)
+    expect(payPerUse.includes).toContain("No commitment needed")
+
+    // Two visits cost more than a month, which is what makes the upsell true.
+    const membership = TLP_PRICING.memberships.find((m) => m.name === "Self-Service Bay")!
+    expect(payPerUse.price * 2).toBeGreaterThan(membership.monthlyPrice)
+  })
+
+  it("states no duration where none is published", () => {
+    // The membership publishes a 10-minute bay limit; nobody has confirmed it
+    // applies to a single paid visit, so the assistant must not claim one.
+    const payPerUse = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Bay")!
+    expect(payPerUse.durationMinutes).toBeNull()
+    expect(pricingText()).toMatch(/- Self-Service Bay: \$10\.00\. Access to self-service/)
+    expect(pricingText()).not.toMatch(/Self-Service Bay: \$10\.00, about/)
   })
 
   it("excludes every inactive service from the CSV", () => {

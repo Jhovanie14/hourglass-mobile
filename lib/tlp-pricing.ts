@@ -26,7 +26,9 @@ export type Membership = {
 export type OneTimeService = {
   name: string
   price: number
-  durationMinutes: number
+  /** Null where no time is published — the assistant then states no duration
+   *  rather than inventing one. */
+  durationMinutes: number | null
   includes: string[]
   excludes: string[]
 }
@@ -167,6 +169,22 @@ export const TLP_PRICING: BrandPricing = {
       includes: ["Express Exterior Detail", "Express Interior Detail"],
       excludes: [],
     },
+    {
+      // Pay-per-use access to the same bays the Self-Service Bay membership
+      // covers, for callers who do not want a membership. Duration is null on
+      // purpose: the membership publishes "up to 10 minutes per bay use" and
+      // the 9:00 AM to 6:30 PM window, but nobody has confirmed those carry
+      // over to a single paid visit, so the assistant states neither.
+      name: "Self-Service Bay",
+      price: 10.0,
+      durationMinutes: null,
+      includes: [
+        "Access to self-service equipment",
+        "No commitment needed",
+        "Pay only when you use it",
+      ],
+      excludes: ["Vacuum is not included"],
+    },
   ],
 
   commercialVehicleTypes: [
@@ -214,9 +232,9 @@ export function pricingText(pricing: BrandPricing = TLP_PRICING): string {
   lines.push("")
   lines.push("ONE-TIME SERVICES (no membership needed):")
   for (const s of pricing.oneTimeServices) {
-    lines.push(
-      `- ${s.name}: ${money(s.price)}, about ${s.durationMinutes} minutes. ${s.includes.join(", ")}.`
-    )
+    const duration =
+      s.durationMinutes === null ? "" : `, about ${s.durationMinutes} minutes`
+    lines.push(`- ${s.name}: ${money(s.price)}${duration}. ${s.includes.join(", ")}.`)
     if (s.excludes.length > 0) lines.push(`  Not included: ${s.excludes.join(", ")}.`)
   }
 
