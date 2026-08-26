@@ -363,10 +363,12 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
           callControlId: payload.call_control_id,
           assistantId: aiSettings.assistantId,
           brandLabel,
-          brandName: brandNameForLabel(
-            brandLabel,
-            process.env as Record<string, string | undefined>
-          ),
+          // Registry name first — it is the only source with the right
+          // casing. brandNameForLabel stays as the fallback for a label with
+          // no registered content.
+          brandName:
+            vars?.brand_name ??
+            brandNameForLabel(brandLabel, process.env as Record<string, string | undefined>),
           variables: vars
             ? {
                 pricing: vars.pricing,

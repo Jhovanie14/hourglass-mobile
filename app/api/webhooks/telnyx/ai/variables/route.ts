@@ -70,8 +70,15 @@ export async function POST(req: Request) {
     console.log("🔍 SPIKE ai/variables request body:", rawBody.slice(0, 2000))
   }
 
+  // brand_name and brand_label are sent here too, not only on the start
+  // command. A Telnyx portal test places no call, so startAIAssistantOnCall
+  // never runs and the greeting rendered "Hi, thanks for calling ." — the
+  // webhook knows the brand by this point, so there is no reason for it not
+  // to say so. Also means a real call gets the name from both paths.
   const brandKeys = vars
     ? {
+        brand_name: vars.brand_name,
+        brand_label: label ?? "",
         pricing: vars.pricing,
         brand_rules: vars.brand_rules,
         hours: vars.hours,

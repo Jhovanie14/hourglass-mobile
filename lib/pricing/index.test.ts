@@ -101,3 +101,22 @@ describe("knownBrandLabels", () => {
     }
   })
 })
+
+describe("displayName", () => {
+  it("is the name as a person writes it, never the upper-cased label", () => {
+    // aiAgentSettings upper-cases AI_AGENT_LABELS, so deriving the spoken name
+    // from env produced "thanks for calling THE LAUNCH PAD".
+    for (const label of resolvableLabels()) {
+      const name = brandContentForLabel(label)!.displayName
+      expect(name, label).not.toBe(name.toUpperCase())
+      expect(name.trim(), label).not.toBe("")
+    }
+  })
+
+  it("names each brand exactly", () => {
+    expect(brandContentForLabel("The Launch Pad")!.displayName).toBe("The Launch Pad")
+    expect(brandContentForLabel("Bucket Baddie")!.displayName).toBe("Bucket Baddie")
+    // Aliases resolve to the same spoken name, not to the alias.
+    expect(brandContentForLabel("TLP")!.displayName).toBe("The Launch Pad")
+  })
+})

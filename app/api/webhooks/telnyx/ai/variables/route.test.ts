@@ -31,7 +31,7 @@ beforeEach(() => {
   process.env.TELNYX_WEBHOOK_PUBLIC_KEY = "key"
   // Production state as of 2026-08-26: one AI brand.
   process.env.TELNYX_AI_ASSISTANT_ID = "assistant-1"
-  process.env.AI_AGENT_LABELS = "TLP"
+  process.env.AI_AGENT_LABELS = "The Launch Pad"
   delete process.env.BB_COUPONS_ENABLED
   delete process.env.BB_COUPONS_URL
   verifyTelnyxWebhook.mockReturnValue(true)
@@ -56,6 +56,8 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
       dynamic_variables: {
         agents_available: true,
         targets: [{ to: "sip:gencred1@sip.telnyx.com", name: "Agent 1" }],
+        brand_name: "The Launch Pad",
+        brand_label: "THE LAUNCH PAD",
         pricing: pricingText(),
         brand_rules: TLP_RULES,
         hours: "",
@@ -85,6 +87,8 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
       dynamic_variables: {
         agents_available: false,
         targets: [],
+        brand_name: "The Launch Pad",
+        brand_label: "THE LAUNCH PAD",
         pricing: pricingText(),
         brand_rules: TLP_RULES,
         hours: "",
@@ -120,7 +124,7 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
 
 describe("brand resolution", () => {
   it("uses the brand named in the body, even with several brands configured", async () => {
-    process.env.AI_AGENT_LABELS = "TLP,Bucket Baddie"
+    process.env.AI_AGENT_LABELS = "The Launch Pad,Bucket Baddie"
 
     const body = await POST(
       req({ data: { payload: { dynamic_variables: { brand_label: "Bucket Baddie" } } } })
@@ -135,7 +139,7 @@ describe("brand resolution", () => {
   it("omits the brand keys rather than guessing once two brands are live", async () => {
     // Two brands and a body that names none. Picking either would risk quoting
     // car wash prices to someone ringing a chicken shop.
-    process.env.AI_AGENT_LABELS = "TLP,Bucket Baddie"
+    process.env.AI_AGENT_LABELS = "The Launch Pad,Bucket Baddie"
 
     const body = await POST(req()).then((r) => r.json())
 
@@ -152,10 +156,10 @@ describe("brand resolution", () => {
   })
 
   it("never serves one brand's prices under another brand's label", async () => {
-    process.env.AI_AGENT_LABELS = "TLP,Bucket Baddie"
+    process.env.AI_AGENT_LABELS = "The Launch Pad,Bucket Baddie"
 
     const bb = await POST(req({ brand_label: "Bucket Baddie" })).then((r) => r.json())
-    const tlp = await POST(req({ brand_label: "TLP" })).then((r) => r.json())
+    const tlp = await POST(req({ brand_label: "The Launch Pad" })).then((r) => r.json())
 
     expect(bb.dynamic_variables.pricing).not.toContain("The Launch Pad")
     expect(tlp.dynamic_variables.pricing).not.toContain("Bucket Baddie")
@@ -189,7 +193,7 @@ describe("coupons", () => {
   })
 
   it("never fetches Bucket Baddie deals on a TLP call", async () => {
-    process.env.AI_AGENT_LABELS = "TLP"
+    process.env.AI_AGENT_LABELS = "The Launch Pad"
     process.env.BB_COUPONS_ENABLED = "true"
     process.env.BB_COUPONS_URL = "https://bucketbaddie.test/api/public-coupons"
     const fetchSpy = vi.spyOn(globalThis, "fetch")
@@ -198,6 +202,7 @@ describe("coupons", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(body.dynamic_variables).not.toHaveProperty("coupons")
+    expect(body.dynamic_variables.brand_name).toBe("The Launch Pad")
     fetchSpy.mockRestore()
   })
 
@@ -216,5 +221,34 @@ describe("coupons", () => {
     // the assistant quoting food prices.
     expect(body.dynamic_variables.pricing).toContain("Bucket Baddie — current menu.")
     fetchSpy.mockRestore()
+  })
+})
+
+describe("brand_name on a portal test", () => {
+  it("names the brand even though no call was placed", () => {
+    // A Telnyx portal test never runs startAIAssistantOnCall, so before this
+    // the greeting rendered "Hi, thanks for calling ." — an empty brand_name
+    // default with nothing to fill it.
+    process.env.AI_AGENT_LABELS = "The Launch Pad"
+    return POST(req())
+      .then((r) => r.json())
+      .then((b) => {
+        expect(b.dynamic_variables.brand_name).toBe("The Launch Pad")
+        expect(b.dynamic_variables.brand_name).not.toBe("")
+      })
+  })
+
+  it("names Bucket Baddie from its own label with no AI_BRAND_NAMES entry", () => {
+    process.env.AI_AGENT_LABELS = "Bucket Baddie"
+    return POST(req())
+      .then((r) => r.json())
+      .then((b) => expect(b.dynamic_variables.brand_name).toBe("Bucket Baddie"))
+  })
+
+  it("sends no brand_name when the brand is unresolved, rather than a wrong one", () => {
+    process.env.AI_AGENT_LABELS = "The Launch Pad,Bucket Baddie"
+    return POST(req())
+      .then((r) => r.json())
+      .then((b) => expect(b.dynamic_variables).not.toHaveProperty("brand_name"))
   })
 })

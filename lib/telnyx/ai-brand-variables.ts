@@ -21,6 +21,8 @@ import { brandContentForLabel } from "@/lib/pricing"
 import { hoursText, isOpenAt } from "@/lib/pricing/hours"
 
 export type BrandVariables = {
+  /** `{{ brand_name }}` — the name the assistant says, correctly cased. */
+  brand_name: string
   /** `{{ pricing }}` — the brand's menu or price list. */
   pricing: string
   /** `{{ brand_rules }}` — policy true of this brand only. Keeps a car wash's
@@ -54,6 +56,7 @@ export function brandVariables(
   if (!content) return null
 
   return {
+    brand_name: content.displayName,
     pricing: content.pricingText(),
     brand_rules: content.rulesText(),
     hours: content.hours ? hoursText(content.hours) : "",

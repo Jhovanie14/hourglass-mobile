@@ -19,6 +19,15 @@ import { BUCKET_BADDIE_HOURS, type BrandHours } from "./hours"
 import { BUCKET_BADDIE_RULES, TLP_RULES } from "./rules"
 
 export type BrandContent = {
+  /**
+   * Resolves `{{ brand_name }}` — the name the assistant SAYS.
+   *
+   * Kept here rather than derived from env because both env sources mangle it:
+   * `aiAgentSettings` upper-cases labels ("THE LAUNCH PAD"), and
+   * `AI_BRAND_NAMES` is keyed on a short code that no longer matches the label.
+   * A caller hearing "thanks for calling THE LAUNCH PAD" is the giveaway.
+   */
+  displayName: string
   /** Resolves `{{ pricing }}`. */
   pricingText: () => string
   /** Resolves `{{ brand_rules }}` — policy that is true of this brand only. */
@@ -51,6 +60,7 @@ export function normalizeLabel(label: string): string {
  */
 const BRANDS: Record<string, BrandContent> = {
   "THE LAUNCH PAD": {
+    displayName: "The Launch Pad",
     pricingText: () => tlpPricingText(),
     rulesText: () => TLP_RULES,
     hours: null,
@@ -61,6 +71,7 @@ const BRANDS: Record<string, BrandContent> = {
   // when spoken. It does still have to appear in AI_AGENT_LABELS, or the AI
   // never picks up.
   "BUCKET BADDIE": {
+    displayName: "Bucket Baddie",
     pricingText: () => bucketBaddiePricingText(),
     rulesText: () => BUCKET_BADDIE_RULES,
     hours: BUCKET_BADDIE_HOURS,
