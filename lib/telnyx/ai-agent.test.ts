@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   aiAgentSettings,
+  assistantIdForLabel,
   isAIAgentLabel,
   brandNameForLabel,
   conversationMessagesToSegments,
@@ -135,5 +136,56 @@ describe("conversationMessagesToSegments", () => {
 
   it("handles null text without throwing", () => {
     expect(conversationMessagesToSegments([{ role: "assistant", text: null }], base)).toEqual([])
+  })
+})
+
+describe("assistantIdForLabel", () => {
+  const shared = { TELNYX_AI_ASSISTANT_ID: "assistant-shared" }
+
+  it("prefers the brand's own assistant over the shared one", () => {
+    expect(
+      assistantIdForLabel("Bucket Baddie", {
+        ...shared,
+        TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE: "assistant-bb",
+      })
+    ).toBe("assistant-bb")
+  })
+
+  it("derives the env key the same way slackWebhookForLabel does", () => {
+    // Space becomes one underscore, so the two env families read alike:
+    // TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE / SLACK_WEBHOOK_URL_BUCKET_BADDIE.
+    expect(
+      assistantIdForLabel("  bucket   baddie  ", {
+        TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE: "assistant-bb",
+      })
+    ).toBe("assistant-bb")
+  })
+
+  it("falls back to the shared assistant for a brand without its own", () => {
+    expect(assistantIdForLabel("The Launch Pad", shared)).toBe("assistant-shared")
+  })
+
+  it("keeps brands on separate assistants once both are configured", () => {
+    const env = {
+      TELNYX_AI_ASSISTANT_ID: "assistant-tlp",
+      TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE: "assistant-bb",
+    }
+    expect(assistantIdForLabel("The Launch Pad", env)).toBe("assistant-tlp")
+    expect(assistantIdForLabel("Bucket Baddie", env)).toBe("assistant-bb")
+  })
+
+  it("returns null when nothing is configured at all", () => {
+    expect(assistantIdForLabel("Bucket Baddie", {})).toBeNull()
+    expect(assistantIdForLabel(null, {})).toBeNull()
+    expect(assistantIdForLabel(null, shared)).toBe("assistant-shared")
+  })
+
+  it("ignores a blank per-brand override rather than treating it as set", () => {
+    expect(
+      assistantIdForLabel("Bucket Baddie", {
+        ...shared,
+        TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE: "   ",
+      })
+    ).toBe("assistant-shared")
   })
 })

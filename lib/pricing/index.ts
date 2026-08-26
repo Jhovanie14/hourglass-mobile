@@ -44,7 +44,10 @@ export type BrandContent = {
  * silently miss the registry and cost the caller their menu.
  */
 export function normalizeLabel(label: string): string {
-  return label.trim().toUpperCase().replace(/\s+/g, " ")
+  // Hyphens and underscores collapse to spaces too, so a URL slug
+  // ("bucket-baddie") resolves to the same brand as the label ("Bucket
+  // Baddie"). That is what lets each assistant have its own webhook path.
+  return label.trim().toUpperCase().replace(/[\s_-]+/g, " ")
 }
 
 /**

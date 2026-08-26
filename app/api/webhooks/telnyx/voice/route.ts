@@ -18,6 +18,7 @@ import {
   aiAgentSettings,
   isAIAgentLabel,
   brandNameForLabel,
+  assistantIdForLabel,
   conversationMessagesToSegments,
   type ConversationMessage,
 } from "@/lib/telnyx/ai-agent"
@@ -359,9 +360,17 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
             `⚠️ No brand content registered for label "${brandLabel}"; assistant starts without pricing`
           )
         }
+        // Each brand gets its own assistant where one is configured
+        // (TELNYX_AI_ASSISTANT_ID_<LABEL>), falling back to the shared id.
+        // Separate assistants are the point: a shared one has to work out
+        // which brand is calling, and that guess is where every brand-mixup
+        // bug has come from.
+        const assistantId =
+          assistantIdForLabel(brandLabel, process.env as Record<string, string | undefined>) ??
+          aiSettings.assistantId
         await startAIAssistantOnCall({
           callControlId: payload.call_control_id,
-          assistantId: aiSettings.assistantId,
+          assistantId,
           brandLabel,
           // Registry name first — it is the only source with the right
           // casing. brandNameForLabel stays as the fallback for a label with

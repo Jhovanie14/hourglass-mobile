@@ -42,6 +42,40 @@ export function aiAgentSettings(env: {
   }
 }
 
+/**
+ * The assistant that answers for a brand.
+ *
+ * `TELNYX_AI_ASSISTANT_ID_<LABEL>` beats the shared `TELNYX_AI_ASSISTANT_ID`,
+ * where <LABEL> is the phone_numbers.label upper-cased with every run of
+ * non-alphanumerics collapsed to one underscore — the same derivation
+ * `slackWebhookForLabel` uses, so the two env families read alike:
+ *
+ *   TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE   SLACK_WEBHOOK_URL_BUCKET_BADDIE
+ *
+ * ONE ASSISTANT PER BRAND IS THE INTENT. A shared assistant has to work out
+ * which brand is on the line at runtime, and every way of doing that is a
+ * guess: the label casing differs by source, and nobody has confirmed Telnyx
+ * echoes brand_label into the variables webhook. Giving each brand its own
+ * assistant — and its own variables webhook URL — deletes the question rather
+ * than answering it. The shared id stays as the fallback so a brand without
+ * its own assistant keeps working.
+ */
+export function assistantIdForLabel(
+  label: string | null | undefined,
+  env: Record<string, string | undefined>
+): string | null {
+  if (label) {
+    const key = `TELNYX_AI_ASSISTANT_ID_${label
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")}`
+    const specific = env[key]?.trim()
+    if (specific) return specific
+  }
+  return env.TELNYX_AI_ASSISTANT_ID?.trim() || null
+}
+
 /** Case-insensitive membership test against phone_numbers.label. */
 export function isAIAgentLabel(
   settings: AIAgentSettings | null,
