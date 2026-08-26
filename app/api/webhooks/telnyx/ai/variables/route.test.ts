@@ -58,8 +58,10 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
         brand_name: "The Launch Pad",
         brand_label: "THE LAUNCH PAD",
         pricing: pricingText(),
-        hours: "",
-        open_now: "unknown",
+        // Calendar-dependent now that The Launch Pad publishes hours, so
+        // asserted by shape rather than by a value that changes hourly.
+        hours: expect.stringContaining("Opening hours:"),
+        open_now: expect.stringMatching(/^(yes|no)$/),
       },
     })
   })
@@ -72,10 +74,13 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
     expect(body.dynamic_variables.pricing).toBe(pricingText())
   })
 
-  it("gives TLP no hours and an unknown open flag rather than claiming it is shut", async () => {
+  it("gives TLP its service hours and a real open flag", async () => {
+    // The Launch Pad gained published hours on 2026-08-27 (9:30-6:30, dropping
+    // to Thursday-Sunday from 18 September). open_now is computed per call, so
+    // it is asserted by shape rather than value.
     const body = await POST(req()).then((r) => r.json())
-    expect(body.dynamic_variables.hours).toBe("")
-    expect(body.dynamic_variables.open_now).toBe("unknown")
+    expect(body.dynamic_variables.hours).toContain("- Monday:")
+    expect(["yes", "no"]).toContain(body.dynamic_variables.open_now)
   })
 
   it("reports no availability when no agent is online", async () => {
@@ -88,8 +93,10 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
         brand_name: "The Launch Pad",
         brand_label: "THE LAUNCH PAD",
         pricing: pricingText(),
-        hours: "",
-        open_now: "unknown",
+        // Calendar-dependent now that The Launch Pad publishes hours, so
+        // asserted by shape rather than by a value that changes hourly.
+        hours: expect.stringContaining("Opening hours:"),
+        open_now: expect.stringMatching(/^(yes|no)$/),
       },
     })
   })

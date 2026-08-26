@@ -54,7 +54,8 @@ describe("per-brand variables webhook", () => {
     return call("the-launch-pad").then((b) => {
       expect(b.dynamic_variables.brand_name).toBe("The Launch Pad")
       expect(b.dynamic_variables.pricing).toBe(pricingText())
-      expect(b.dynamic_variables.open_now).toBe("unknown")
+      expect(b.dynamic_variables.hours).toContain("- Monday:")
+      expect(["yes", "no"]).toContain(b.dynamic_variables.open_now)
     })
   })
 
