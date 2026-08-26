@@ -146,15 +146,17 @@ describe("assistant identity and variable defaults", () => {
   it("defaults every variable the shared block reads", () => {
     const block = extractInstructions(SHARED)
     for (const key of Object.keys(DYNAMIC_VARIABLE_DEFAULTS)) {
-      if (key === "brand_label" || key === "agents_available" || key === "targets") continue
+      if (key === "agents_available" || key === "targets") continue
       expect(block).toContain(`{{ ${key} }}`)
     }
   })
 
-  it("never defaults brand_name to an actual brand", () => {
-    // The live default was "The Launch Pad", which greets a chicken shop
-    // caller by a car wash's name the one time the net is needed.
-    expect(DYNAMIC_VARIABLE_DEFAULTS.brand_name).toBe("")
+  it("does not manage brand_name or brand_label", () => {
+    // Per-assistant identity, not shared config. Each brand's own assistant
+    // defaults them to its own name; syncing a shared value here blanked the
+    // greeting to "Hi, thanks for calling ." on 2026-08-26.
+    expect(DYNAMIC_VARIABLE_DEFAULTS).not.toHaveProperty("brand_name")
+    expect(DYNAMIC_VARIABLE_DEFAULTS).not.toHaveProperty("brand_label")
   })
 
   it("defaults pricing to an empty string, never null", () => {

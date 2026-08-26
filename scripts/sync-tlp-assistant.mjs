@@ -54,8 +54,11 @@ const ASSISTANT_DESCRIPTION =
  * Telnyx stores these as strings, booleans and arrays included.
  */
 export const DYNAMIC_VARIABLE_DEFAULTS = {
-  brand_name: "",
-  brand_label: "",
+  // brand_name and brand_label are deliberately ABSENT. Each brand now has its
+  // own assistant, so those are per-assistant identity rather than shared
+  // config, and each one's default names its own brand. Managing them here
+  // would reset every assistant to the same value — which is how the greeting
+  // became "Hi, thanks for calling ." on 2026-08-26.
   brand_rules: "",
   pricing: "",
   hours: "",
