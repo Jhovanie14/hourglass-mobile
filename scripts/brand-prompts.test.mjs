@@ -57,16 +57,36 @@ describe("bakeInstructions", () => {
     }
   })
 
-  it("never lets one brand's prompt mention the other", () => {
+  it("never lets one brand's policy or prices reach the other", () => {
     // The bug this whole file exists to prevent: on 2026-08-26 the Bucket
     // Baddie assistant offered car washes, because its identity and policy
     // arrived over a network call that resolved to the wrong brand.
     const bb = bakeInstructions(SHARED, brand("Bucket Baddie"))
     const tlp = bakeInstructions(SHARED, brand("The Launch Pad"))
-    expect(bb).not.toContain("The Launch Pad")
-    expect(bb).not.toMatch(/car wash|membership|tire shine/i)
-    expect(tlp).not.toContain("Bucket Baddie")
+    expect(bb).not.toContain(brand("The Launch Pad").rules)
+    expect(bb).not.toContain(brand("The Launch Pad").pricing)
+    expect(bb).not.toMatch(/membership|tire shine/i)
+    expect(tlp).not.toContain(brand("Bucket Baddie").rules)
+    expect(tlp).not.toContain(brand("Bucket Baddie").pricing)
     expect(tlp).not.toMatch(/halal|wings|glaze/i)
+  })
+
+  it("lets Bucket Baddie name the car wash, but only for directions", () => {
+    // They share a lot — the truck is findable only by naming the car wash —
+    // so the location note is the single sanctioned cross-brand mention.
+    const bb = bakeInstructions(SHARED, brand("Bucket Baddie"))
+    expect(bb).toContain("same lot as The Launch Pad car wash")
+
+    const outsideLocation = bb.replaceAll(brand("Bucket Baddie").locationNote, "")
+    expect(outsideLocation).not.toContain("The Launch Pad")
+  })
+
+  it("gives both brands the shared address", () => {
+    for (const b of BRAND_PROMPTS) {
+      expect(bakeInstructions(SHARED, b), b.label).toContain(
+        "10410 South Main Street, Houston, Texas 77025"
+      )
+    }
   })
 
   it("bakes in the menu, so the assistant knows it without a webhook", () => {
@@ -83,6 +103,7 @@ describe("bakeInstructions", () => {
     expect(baked).toContain("- Monday: closed.")
     expect(baked).toContain("- Friday: 4 PM to midnight.")
     expect(baked).toContain("10410 South Main Street, Houston, Texas 77025")
+    expect(baked).toContain("food truck")
     expect(baked).not.toContain("{{ hours }}")
   })
 
@@ -114,8 +135,26 @@ describe("bakeInstructions", () => {
     ).toThrow(/placeholder survived/)
   })
 
-  it("throws if a brand's own rules name another brand", () => {
+  it("throws if a brand names another outside its location note", () => {
     const poisoned = { ...brand("Bucket Baddie"), rules: "Ask about The Launch Pad." }
-    expect(() => bakeInstructions(SHARED, poisoned)).toThrow(/mentions The Launch Pad/)
+    expect(() => bakeInstructions(SHARED, poisoned)).toThrow(
+      /names The Launch Pad outside the location note/
+    )
+  })
+
+  it("throws if another brand's whole rule block gets in", () => {
+    const poisoned = {
+      ...brand("Bucket Baddie"),
+      rules: brand("The Launch Pad").rules,
+    }
+    expect(() => bakeInstructions(SHARED, poisoned)).toThrow(/carries The Launch Pad's rules/)
+  })
+
+  it("throws if another brand's price list gets in", () => {
+    const poisoned = {
+      ...brand("Bucket Baddie"),
+      pricing: brand("The Launch Pad").pricing,
+    }
+    expect(() => bakeInstructions(SHARED, poisoned)).toThrow(/carries The Launch Pad's prices/)
   })
 })

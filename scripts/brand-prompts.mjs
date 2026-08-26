@@ -123,16 +123,34 @@ minimum or a lead time for it, because you do not have them. Take their name,
 number, the event, roughly how many people and the date, tell them someone will
 call back with a quote, and say plainly that this was a catering enquiry.
 
-WHERE WE ARE
-10410 South Main Street, Houston, Texas 77025. That is the only location. If
-someone asks for directions beyond the address, give the address again and
-suggest they search it — do not invent landmarks, cross streets or parking.
-
 HALAL
 All the chicken is one hundred percent halal from certified suppliers. There is
 no pork or pork by-product in the kitchen. You can say that plainly.
 
 Do not comment on how spicy something is beyond the heat levels in the menu.`
+
+/**
+ * Where each brand is, as the receptionist says it.
+ *
+ * Held apart from `rules` because both businesses share one address — Bucket
+ * Baddie is the food truck in the same lot as The Launch Pad car wash — so
+ * Bucket Baddie's directions have to name The Launch Pad to be useful. That is
+ * the ONLY place one brand may name another, and bakeInstructions enforces it:
+ * the name is permitted inside this note and nowhere else in the prompt.
+ */
+const LOCATIONS = {
+  "The Launch Pad": `WHERE WE ARE
+10410 South Main Street, Houston, Texas 77025. That is the only location. If
+someone asks for directions beyond the address, give the address again and
+suggest they search it — do not invent landmarks, cross streets or parking.`,
+
+  "Bucket Baddie": `WHERE WE ARE
+We are the food truck at 10410 South Main Street, Houston, Texas 77025, in the
+same lot as The Launch Pad car wash — tell callers to look for the truck. That
+is the only location. If someone asks for directions beyond the address, give
+the address again and suggest they search it — do not invent landmarks, cross
+streets or parking.`,
+}
 
 /**
  * Every brand with an AI receptionist.
@@ -148,6 +166,7 @@ export const BRAND_PROMPTS = [
     displayName: "The Launch Pad",
     assistantIdEnv: "TELNYX_AI_ASSISTANT_ID",
     rules: TLP_RULES,
+    locationNote: LOCATIONS["The Launch Pad"],
     pricing: generated("the-launch-pad-pricing.txt"),
     // The Launch Pad publishes no opening hours through the assistant.
     hours: "",
@@ -158,6 +177,7 @@ export const BRAND_PROMPTS = [
     displayName: "Bucket Baddie",
     assistantIdEnv: "TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE",
     rules: BUCKET_BADDIE_RULES,
+    locationNote: LOCATIONS["Bucket Baddie"],
     pricing: generated("bucket-baddie-pricing.txt"),
     hours: generated("bucket-baddie-hours.txt"),
   },
@@ -175,7 +195,10 @@ export const BRAND_PROMPTS = [
 export function bakeInstructions(sharedBlock, brand) {
   const baked = sharedBlock
     .replaceAll(/\{\{\s*brand_name\s*\}\}/g, brand.displayName)
-    .replaceAll(/\{\{\s*brand_rules\s*\}\}/g, brand.rules)
+    .replaceAll(
+      /\{\{\s*brand_rules\s*\}\}/g,
+      [brand.rules, brand.locationNote].filter(Boolean).join("\n\n")
+    )
     .replaceAll(/\{\{\s*pricing\s*\}\}/g, brand.pricing ?? "")
     .replaceAll(/\{\{\s*hours\s*\}\}/g, brand.hours ?? "")
 
@@ -187,8 +210,25 @@ export function bakeInstructions(sharedBlock, brand) {
   }
   for (const other of BRAND_PROMPTS) {
     if (other.label === brand.label) continue
-    if (baked.includes(other.displayName)) {
-      throw new Error(`${brand.label}: baked prompt mentions ${other.displayName}`)
+
+    // The real contamination: another brand's policy or price list ending up
+    // in this prompt. Checked whole, so no exemption can hide it.
+    if (other.rules && baked.includes(other.rules)) {
+      throw new Error(`${brand.label}: baked prompt carries ${other.displayName}'s rules`)
+    }
+    if (other.pricing && baked.includes(other.pricing)) {
+      throw new Error(`${brand.label}: baked prompt carries ${other.displayName}'s prices`)
+    }
+
+    // The name itself is allowed ONLY inside this brand's location note, where
+    // it is load-bearing: the food truck shares a lot with the car wash.
+    const outsideLocation = brand.locationNote
+      ? baked.replaceAll(brand.locationNote, "")
+      : baked
+    if (outsideLocation.includes(other.displayName)) {
+      throw new Error(
+        `${brand.label}: baked prompt names ${other.displayName} outside the location note`
+      )
     }
   }
   return baked

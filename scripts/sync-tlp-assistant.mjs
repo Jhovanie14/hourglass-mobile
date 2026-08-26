@@ -318,11 +318,28 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
         ?.on_number_seconds === SPEECH.on_number_seconds,
     ],
     ["model kept", Boolean(after.model)],
-    // The failure this whole change exists to prevent.
-    ...BRAND_PROMPTS.filter((b) => b.label !== brand.label).map((other) => [
-      `does NOT mention ${other.displayName}`,
-      !(after.instructions ?? "").includes(other.displayName),
-    ]),
+    // The failure this whole change exists to prevent. Mirrors the guard in
+    // bakeInstructions: another brand's rules or prices must not appear at
+    // all, and its NAME may appear only inside this brand's location note —
+    // Bucket Baddie's truck is findable only by naming the car wash it shares
+    // a lot with.
+    ...BRAND_PROMPTS.filter((b) => b.label !== brand.label).flatMap((other) => {
+      const ins = after.instructions ?? ""
+      const outsideLocation = brand.locationNote
+        ? ins.replaceAll(brand.locationNote, "")
+        : ins
+      return [
+        [`carries none of ${other.displayName}'s rules`, !ins.includes(other.rules)],
+        [
+          `carries none of ${other.displayName}'s prices`,
+          !other.pricing || !ins.includes(other.pricing),
+        ],
+        [
+          `names ${other.displayName} only for directions`,
+          !outsideLocation.includes(other.displayName),
+        ],
+      ]
+    }),
   ]
   for (const [name, ok] of checks) console.log(`  ${ok ? "✓" : "✗ FAILED"} ${name}`)
   if (checks.some(([, ok]) => !ok)) {
