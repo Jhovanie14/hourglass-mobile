@@ -2,6 +2,8 @@
 // or env access at module scope so it unit-tests in plain node (mirrors the
 // other lib/telnyx pure modules).
 
+import { canonicalLabel } from "@/lib/pricing"
+
 export type AIAgentSettings = {
   assistantId: string
   labels: string[] // normalized upper-case phone_numbers.label values
@@ -76,13 +78,20 @@ export function assistantIdForLabel(
   return env.TELNYX_AI_ASSISTANT_ID?.trim() || null
 }
 
-/** Case-insensitive membership test against phone_numbers.label. */
+/**
+ * Is this number's brand AI-enabled?
+ *
+ * Compares CANONICAL labels, so `AI_AGENT_LABELS=TLP` still matches a
+ * phone_numbers.label of "The Launch Pad". They name one brand, and a gate
+ * that says otherwise sends every caller to voicemail with nothing logged.
+ */
 export function isAIAgentLabel(
   settings: AIAgentSettings | null,
   label: string | null | undefined
 ): boolean {
   if (!settings || !label) return false
-  return settings.labels.includes(label.trim().toUpperCase())
+  const want = canonicalLabel(label)
+  return settings.labels.some((configured) => canonicalLabel(configured) === want)
 }
 
 /** Spoken/branded display name for a phone_numbers.label, from the optional

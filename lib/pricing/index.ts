@@ -106,6 +106,25 @@ export function brandContentForLabel(
   return BRANDS[key] ?? BRANDS[LABEL_ALIASES[key] ?? ""] ?? null
 }
 
+/**
+ * A label reduced to the one spelling everything else keys on.
+ *
+ * "TLP" and "The Launch Pad" name the same brand — the first is what
+ * AI_BRAND_NAMES and the older docs use, the second is what
+ * `phone_numbers.label` actually contains. Anything comparing labels must
+ * compare canonical forms or the two spellings silently fail to match, which
+ * is how AI_AGENT_LABELS=TLP stopped real Launch Pad calls reaching the
+ * assistant on 2026-08-26.
+ *
+ * An unknown label comes back normalised but otherwise untouched, so
+ * non-AI brands still compare correctly against each other.
+ */
+export function canonicalLabel(label: string | null | undefined): string {
+  if (!label) return ""
+  const key = normalizeLabel(label)
+  return LABEL_ALIASES[key] ?? key
+}
+
 /** Canonical labels with content. Exposed for tests and diagnostics. */
 export function knownBrandLabels(): string[] {
   return Object.keys(BRANDS)

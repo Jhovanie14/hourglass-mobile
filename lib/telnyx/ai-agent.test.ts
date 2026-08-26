@@ -189,3 +189,36 @@ describe("assistantIdForLabel", () => {
     ).toBe("assistant-shared")
   })
 })
+
+describe("isAIAgentLabel across label spellings", () => {
+  const settingsFor = (labels: string) =>
+    aiAgentSettings({ TELNYX_AI_ASSISTANT_ID: "a1", AI_AGENT_LABELS: labels })
+
+  it("matches the database label when env uses the short code", () => {
+    // AI_AGENT_LABELS=TLP with phone_numbers.label="The Launch Pad" sent every
+    // Launch Pad caller to voicemail, silently, on 2026-08-26.
+    expect(isAIAgentLabel(settingsFor("TLP"), "The Launch Pad")).toBe(true)
+  })
+
+  it("matches the short code when env uses the database label", () => {
+    expect(isAIAgentLabel(settingsFor("The Launch Pad"), "TLP")).toBe(true)
+  })
+
+  it("matches either spelling alongside a second brand", () => {
+    for (const env of ["TLP,Bucket Baddie", "The Launch Pad,Bucket Baddie"]) {
+      expect(isAIAgentLabel(settingsFor(env), "The Launch Pad"), env).toBe(true)
+      expect(isAIAgentLabel(settingsFor(env), "Bucket Baddie"), env).toBe(true)
+    }
+  })
+
+  it("still refuses a brand that is not configured", () => {
+    // STR and HGI are live rows with no AI receptionist.
+    expect(isAIAgentLabel(settingsFor("The Launch Pad"), "STR")).toBe(false)
+    expect(isAIAgentLabel(settingsFor("The Launch Pad"), "HGI")).toBe(false)
+    expect(isAIAgentLabel(settingsFor("The Launch Pad"), "Bucket Baddie")).toBe(false)
+  })
+
+  it("tolerates casing and stray whitespace on both sides", () => {
+    expect(isAIAgentLabel(settingsFor(" bucket baddie "), "Bucket  Baddie")).toBe(true)
+  })
+})
