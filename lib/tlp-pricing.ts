@@ -107,7 +107,10 @@ export const TLP_PRICING: BrandPricing = {
       notes: [
         "About $0.67 a day",
         "One vehicle per membership",
-        "Available 9:00 AM to 6:30 PM",
+        // Replaced 2026-08-27: the source site said "9:00 AM to 6:30 PM", the
+        // owner says the bays run 24/7. Same physical bays as the pay-per-use
+        // entry below, so both say the same thing.
+        "Bays are open 24 hours a day, 7 days a week",
         "Vacuum is not included",
         "Not valid for detailing services",
       ],
@@ -171,10 +174,10 @@ export const TLP_PRICING: BrandPricing = {
     },
     {
       // Pay-per-use access to the same bays the Self-Service Bay membership
-      // covers, for callers who do not want a membership. Duration is null on
-      // purpose: the membership publishes "up to 10 minutes per bay use" and
-      // the 9:00 AM to 6:30 PM window, but nobody has confirmed those carry
-      // over to a single paid visit, so the assistant states neither.
+      // covers, for callers who do not want a membership. Duration stays null:
+      // the membership publishes "up to 10 minutes per bay use", and the owner
+      // confirmed on 2026-08-27 that no time limit is published for a single
+      // paid visit, so the assistant states none rather than inventing one.
       name: "Self-Service Bay",
       price: 10.0,
       durationMinutes: null,
@@ -182,6 +185,7 @@ export const TLP_PRICING: BrandPricing = {
         "Access to self-service equipment",
         "No commitment needed",
         "Pay only when you use it",
+        "Open 24 hours a day, 7 days a week",
       ],
       excludes: ["Vacuum is not included"],
     },

@@ -63,6 +63,17 @@ describe("TLP_PRICING", () => {
     expect(payPerUse.price * 2).toBeGreaterThan(membership.monthlyPrice)
   })
 
+  it("says the bays run 24/7, on both the membership and the pay-per-use", () => {
+    // Owner confirmed 2026-08-27. The source site's "9:00 AM to 6:30 PM" was
+    // wrong; these are the same physical bays, so both entries must agree or
+    // a member and a walk-up get told different things about the same gate.
+    const membership = TLP_PRICING.memberships.find((m) => m.name === "Self-Service Bay")!
+    const payPerUse = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Bay")!
+    expect(membership.notes.join(" ")).toContain("24 hours a day, 7 days a week")
+    expect(payPerUse.includes.join(" ")).toContain("24 hours a day, 7 days a week")
+    expect(pricingText()).not.toContain("9:00 AM to 6:30 PM")
+  })
+
   it("states no duration where none is published", () => {
     // The membership publishes a 10-minute bay limit; nobody has confirmed it
     // applies to a single paid visit, so the assistant must not claim one.
