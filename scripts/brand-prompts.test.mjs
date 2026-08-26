@@ -69,11 +69,35 @@ describe("bakeInstructions", () => {
     expect(tlp).not.toMatch(/halal|wings|glaze/i)
   })
 
-  it("keeps the genuinely dynamic variables as placeholders", () => {
-    // Prices, hours and deals still change, so they stay dynamic. Only
-    // identity and policy are baked.
+  it("bakes in the menu, so the assistant knows it without a webhook", () => {
     const baked = bakeInstructions(SHARED, brand("Bucket Baddie"))
-    for (const v of ["{{ pricing }}", "{{ hours }}", "{{ open_now }}", "{{ coupons }}"]) {
+    expect(baked).toContain("Rice Bowl (regular): $11.99")
+    expect(baked).toContain("Ghost Pepper")      // a glaze
+    expect(baked).toContain("Ranch Drip")        // a dip
+    expect(baked).toContain("SAME PRICE, DIFFERENT ITEMS")
+    expect(baked).not.toContain("{{ pricing }}")
+  })
+
+  it("bakes in the opening hours and the address", () => {
+    const baked = bakeInstructions(SHARED, brand("Bucket Baddie"))
+    expect(baked).toContain("- Monday: closed.")
+    expect(baked).toContain("- Friday: 4 PM to midnight.")
+    expect(baked).toContain("10410 South Main Street, Houston, Texas 77025")
+    expect(baked).not.toContain("{{ hours }}")
+  })
+
+  it("bakes The Launch Pad's own prices and no hours", () => {
+    const baked = bakeInstructions(SHARED, brand("The Launch Pad"))
+    expect(baked).toContain("Express Complete Detail")
+    expect(baked).not.toContain("{{ pricing }}")
+    expect(baked).not.toContain("{{ hours }}")
+  })
+
+  it("leaves as placeholders only what cannot be known at sync time", () => {
+    // Whether we are open this minute, live deals, and agent presence. Baking
+    // any of those would freeze them at the moment of the last sync.
+    const baked = bakeInstructions(SHARED, brand("Bucket Baddie"))
+    for (const v of ["{{ open_now }}", "{{ coupons }}"]) {
       expect(baked).toContain(v)
     }
   })

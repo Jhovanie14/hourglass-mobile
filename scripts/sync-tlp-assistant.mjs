@@ -223,6 +223,29 @@ async function ensureGroup(apiKey, insightId) {
   return group.id
 }
 
+/**
+ * How the receptionist paces itself.
+ *
+ * The account defaults had `voice_speed: 1` with every endpointing threshold at
+ * 0.1s, which is what made it feel rushed and robotic: it began speaking a
+ * tenth of a second after the caller stopped making noise, so any mid-sentence
+ * pause got talked over.
+ *
+ * `onNumberSeconds` matters most. Taking a message is this assistant's main
+ * job, and people read a phone number in groups with gaps between them. At
+ * 0.1s it interrupted halfway through and captured half a number.
+ *
+ * The voice itself is NOT managed here — whichever voice is chosen in the
+ * portal is preserved. Only the pacing fields are overwritten.
+ */
+const SPEECH = {
+  voice_speed: 0.9,
+  wait_seconds: 0.5,
+  on_punctuation_seconds: 0.3,
+  on_no_punctuation_seconds: 0.8,
+  on_number_seconds: 1.2,
+}
+
 const BASE_URL = (process.env.APP_BASE_URL ?? "https://www.megestic.com").replace(/\/$/, "")
 
 function assistantConfig(brand, sharedBlock) {
@@ -249,9 +272,30 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
 
   if (DRY_RUN) return { skipped: false, dryRun: true }
 
+  // Read first so pacing merges onto whatever voice is configured, rather than
+  // replacing a voice someone deliberately chose in the portal.
+  const currentBody = await telnyx(apiKey, "GET", `/ai/assistants/${assistantId}`)
+  const current = currentBody?.data ?? currentBody
+  const prior = current.interruption_settings ?? {}
+  const priorPlan = prior.start_speaking_plan ?? {}
+
   await telnyx(apiKey, "POST", `/ai/assistants/${assistantId}`, {
     ...cfg,
     insight_settings: { insight_group_id: groupId },
+    voice_settings: { ...(current.voice_settings ?? {}), voice_speed: SPEECH.voice_speed },
+    interruption_settings: {
+      ...prior,
+      start_speaking_plan: {
+        ...priorPlan,
+        wait_seconds: SPEECH.wait_seconds,
+        transcription_endpointing_plan: {
+          ...(priorPlan.transcription_endpointing_plan ?? {}),
+          on_punctuation_seconds: SPEECH.on_punctuation_seconds,
+          on_no_punctuation_seconds: SPEECH.on_no_punctuation_seconds,
+          on_number_seconds: SPEECH.on_number_seconds,
+        },
+      },
+    },
   })
 
   const body = await telnyx(apiKey, "GET", `/ai/assistants/${assistantId}`)
@@ -262,7 +306,17 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
     ["greeting", after.greeting === cfg.greeting],
     ["webhook", after.dynamic_variables_webhook_url === cfg.dynamic_variables_webhook_url],
     ["insight group", after.insight_settings?.insight_group_id === groupId],
-    ["voice kept", Boolean(after.voice_settings?.voice)],
+    ["voice kept", after.voice_settings?.voice === current.voice_settings?.voice],
+    ["speech slowed", after.voice_settings?.voice_speed === SPEECH.voice_speed],
+    [
+      "waits before replying",
+      after.interruption_settings?.start_speaking_plan?.wait_seconds === SPEECH.wait_seconds,
+    ],
+    [
+      "waits mid phone number",
+      after.interruption_settings?.start_speaking_plan?.transcription_endpointing_plan
+        ?.on_number_seconds === SPEECH.on_number_seconds,
+    ],
     ["model kept", Boolean(after.model)],
     // The failure this whole change exists to prevent.
     ...BRAND_PROMPTS.filter((b) => b.label !== brand.label).map((other) => [

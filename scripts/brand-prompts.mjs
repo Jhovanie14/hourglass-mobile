@@ -9,12 +9,28 @@
 // makes that impossible: the wrong brand cannot be spoken because the wrong
 // brand is not in the prompt.
 //
-// What stays dynamic is only what genuinely changes: prices, hours, whether we
-// are open, and live deals. Each of those degrades to "I don't have that, can I
-// take a message?" if it fails to resolve, which is safe for any brand.
+// What stays dynamic is only what cannot be known at sync time: whether we are
+// open right now, live deals, and whether an agent is reachable. Each degrades
+// to "I don't have that, can I take a message?" if it fails to resolve, which
+// is safe for any brand.
+//
+// Menus and hours are baked in too, read from scripts/generated/. They are
+// constants in this repo — they change only on deploy — so shipping them over
+// the wire at call time bought nothing and cost the assistant its entire menu
+// whenever the webhook was unreachable or rejected, the Telnyx portal's test
+// tool included. Regenerate with:
+//
+//   npx vitest run lib/pricing/generated-content.test.ts -u
 //
 // Plain .mjs so scripts/sync-tlp-assistant.mjs can import it directly. It is
 // build-time content, never bundled into the app.
+
+import { readFileSync } from "node:fs"
+import { resolve, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const generated = (file) => readFileSync(resolve(HERE, "generated", file), "utf8").trimEnd()
 
 /** The Launch Pad — car wash. */
 const TLP_RULES = `You are a car wash.
@@ -107,6 +123,11 @@ minimum or a lead time for it, because you do not have them. Take their name,
 number, the event, roughly how many people and the date, tell them someone will
 call back with a quote, and say plainly that this was a catering enquiry.
 
+WHERE WE ARE
+10410 South Main Street, Houston, Texas 77025. That is the only location. If
+someone asks for directions beyond the address, give the address again and
+suggest they search it — do not invent landmarks, cross streets or parking.
+
 HALAL
 All the chicken is one hundred percent halal from certified suppliers. There is
 no pork or pork by-product in the kitchen. You can say that plainly.
@@ -127,6 +148,9 @@ export const BRAND_PROMPTS = [
     displayName: "The Launch Pad",
     assistantIdEnv: "TELNYX_AI_ASSISTANT_ID",
     rules: TLP_RULES,
+    pricing: generated("the-launch-pad-pricing.txt"),
+    // The Launch Pad publishes no opening hours through the assistant.
+    hours: "",
   },
   {
     label: "Bucket Baddie",
@@ -134,6 +158,8 @@ export const BRAND_PROMPTS = [
     displayName: "Bucket Baddie",
     assistantIdEnv: "TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE",
     rules: BUCKET_BADDIE_RULES,
+    pricing: generated("bucket-baddie-pricing.txt"),
+    hours: generated("bucket-baddie-hours.txt"),
   },
 ]
 
@@ -150,8 +176,10 @@ export function bakeInstructions(sharedBlock, brand) {
   const baked = sharedBlock
     .replaceAll(/\{\{\s*brand_name\s*\}\}/g, brand.displayName)
     .replaceAll(/\{\{\s*brand_rules\s*\}\}/g, brand.rules)
+    .replaceAll(/\{\{\s*pricing\s*\}\}/g, brand.pricing ?? "")
+    .replaceAll(/\{\{\s*hours\s*\}\}/g, brand.hours ?? "")
 
-  if (/\{\{\s*brand_(name|rules|label)\s*\}\}/.test(baked)) {
+  if (/\{\{\s*(brand_name|brand_rules|brand_label|pricing|hours)\s*\}\}/.test(baked)) {
     throw new Error(`${brand.label}: a brand placeholder survived substitution`)
   }
   if (!baked.includes(brand.displayName)) {
