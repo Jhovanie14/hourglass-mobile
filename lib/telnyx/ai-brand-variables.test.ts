@@ -25,7 +25,7 @@ describe("brandVariables", () => {
   it("gives TLP its prices, no hours, and an unknown open flag", () => {
     // TLP has never published hours through the assistant. A boolean would
     // force a wrong answer here; "unknown" lets the assistant decline.
-    const vars = brandVariables("TLP", OPEN)!
+    const vars = brandVariables("The Launch Pad", OPEN)!
     expect(vars.pricing).toContain("The Launch Pad")
     expect(vars.hours).toBe("")
     expect(vars.open_now).toBe("unknown")
@@ -40,7 +40,7 @@ describe("brandVariables", () => {
 
   it("never leaks one brand's content into the other", () => {
     const bb = brandVariables("Bucket Baddie", OPEN)!
-    const tlp = brandVariables("TLP", OPEN)!
+    const tlp = brandVariables("The Launch Pad", OPEN)!
     expect(bb.pricing).not.toContain("The Launch Pad")
     expect(tlp.pricing).not.toContain("Bucket Baddie")
     expect(bb.brand_rules).not.toMatch(/membership|wash/i)
@@ -51,7 +51,7 @@ describe("brandVariables", () => {
     expect(brandVariables("Bucket Baddie", OPEN)!.brand_rules).toMatch(
       /^You are a halal fried chicken spot/
     )
-    expect(brandVariables("TLP", OPEN)!.brand_rules).toMatch(/^You are a car wash/)
+    expect(brandVariables("The Launch Pad", OPEN)!.brand_rules).toMatch(/^You are a car wash/)
   })
 })
 

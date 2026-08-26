@@ -38,9 +38,19 @@ export function normalizeLabel(label: string): string {
   return label.trim().toUpperCase().replace(/\s+/g, " ")
 }
 
-/** Keyed by the normalised `phone_numbers.label`. */
+/**
+ * Keyed by the normalised `phone_numbers.label` — the value that actually
+ * arrives at runtime, not the short code used in env.
+ *
+ * Getting this wrong is silent: an unmatched label returns null, the routes
+ * omit the brand keys, and the assistant politely says it cannot quote. It
+ * happened on 2026-08-26, when this map was keyed "TLP" while the live row
+ * reads "The Launch Pad". Check the DB, not the env, when adding a brand:
+ *
+ *   select phone_number, label from phone_numbers where is_active;
+ */
 const BRANDS: Record<string, BrandContent> = {
-  TLP: {
+  "THE LAUNCH PAD": {
     pricingText: () => tlpPricingText(),
     rulesText: () => TLP_RULES,
     hours: null,
@@ -58,6 +68,18 @@ const BRANDS: Record<string, BrandContent> = {
 }
 
 /**
+ * Short codes that mean the same brand as a canonical label above.
+ *
+ * "TLP" is the form used in `AI_BRAND_NAMES` (`TLP:The Launch Pad`) and in the
+ * older docs, while `phone_numbers.label` says "The Launch Pad". Both have to
+ * resolve, because either can end up in `AI_AGENT_LABELS`.
+ */
+const LABEL_ALIASES: Record<string, string> = {
+  TLP: "THE LAUNCH PAD",
+  BB: "BUCKET BADDIE",
+}
+
+/**
  * Content for a label, or null when the label isn't a brand we have content
  * for.
  *
@@ -71,10 +93,16 @@ export function brandContentForLabel(
   label: string | null | undefined
 ): BrandContent | null {
   if (!label) return null
-  return BRANDS[normalizeLabel(label)] ?? null
+  const key = normalizeLabel(label)
+  return BRANDS[key] ?? BRANDS[LABEL_ALIASES[key] ?? ""] ?? null
 }
 
-/** Labels with content, upper-cased. Exposed for tests and diagnostics. */
+/** Canonical labels with content. Exposed for tests and diagnostics. */
 export function knownBrandLabels(): string[] {
   return Object.keys(BRANDS)
+}
+
+/** Every string that resolves, canonical labels and aliases alike. */
+export function resolvableLabels(): string[] {
+  return [...Object.keys(BRANDS), ...Object.keys(LABEL_ALIASES)]
 }

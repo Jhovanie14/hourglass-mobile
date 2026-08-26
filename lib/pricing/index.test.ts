@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest"
-import { brandContentForLabel, knownBrandLabels, normalizeLabel } from "./index"
+import {
+  brandContentForLabel,
+  knownBrandLabels,
+  normalizeLabel,
+  resolvableLabels,
+} from "./index"
 import { pricingText as tlpPricingText } from "@/lib/tlp-pricing"
 
 describe("brandContentForLabel", () => {
-  it("resolves TLP to the existing wash pricing, byte for byte", () => {
+  it("resolves The Launch Pad to the existing wash pricing, byte for byte", () => {
     // The TLP block must not change as a side effect of adding brands. This
     // compares against the same function the live route calls today.
-    const content = brandContentForLabel("TLP")
+    const content = brandContentForLabel("The Launch Pad")
     expect(content).not.toBeNull()
     expect(content!.pricingText()).toBe(tlpPricingText())
   })
@@ -21,7 +26,7 @@ describe("brandContentForLabel", () => {
   })
 
   it("never serves one brand's prices to another", () => {
-    const tlp = brandContentForLabel("TLP")!.pricingText()
+    const tlp = brandContentForLabel("The Launch Pad")!.pricingText()
     const bb = brandContentForLabel("Bucket Baddie")!.pricingText()
     expect(tlp).not.toContain("Bucket Baddie")
     expect(bb).not.toContain("The Launch Pad")
@@ -36,10 +41,31 @@ describe("brandContentForLabel", () => {
     }
   })
 
-  it("does not resolve the old 'BB' short code", () => {
-    // Guards the correction made on 2026-08-26: the registry was keyed on "BB"
-    // before the live label was confirmed as "Bucket Baddie".
-    expect(brandContentForLabel("BB")).toBeNull()
+  // The exact `phone_numbers.label` values, read from the live table on
+  // 2026-08-26. These are the strings that actually arrive at runtime, and
+  // keying the registry on anything else fails silently — the routes just omit
+  // the brand and the assistant says it cannot quote.
+  it("resolves every AI-enabled label exactly as the database spells it", () => {
+    expect(brandContentForLabel("The Launch Pad")).not.toBeNull()
+    expect(brandContentForLabel("Bucket Baddie")).not.toBeNull()
+  })
+
+  it("resolves the TLP short code as an alias for The Launch Pad", () => {
+    // AI_BRAND_NAMES uses "TLP:The Launch Pad", so either form can reach
+    // AI_AGENT_LABELS. Both must land on the same content.
+    expect(brandContentForLabel("TLP")!.pricingText()).toBe(
+      brandContentForLabel("The Launch Pad")!.pricingText()
+    )
+    expect(brandContentForLabel("BB")!.pricingText()).toBe(
+      brandContentForLabel("Bucket Baddie")!.pricingText()
+    )
+  })
+
+  it("returns null for the non-AI brands in the same table", () => {
+    // STR and HGI are live rows with no AI receptionist. They must stay null,
+    // not inherit another brand's prices.
+    expect(brandContentForLabel("STR")).toBeNull()
+    expect(brandContentForLabel("HGI")).toBeNull()
   })
 
   it("returns null for an unknown, empty or missing label", () => {
@@ -54,18 +80,24 @@ describe("brandContentForLabel", () => {
     expect(bb.hours).not.toBeNull()
     expect(bb.hours!.timeZone).toBe("America/Chicago")
     // TLP has never published hours through the assistant.
-    expect(brandContentForLabel("TLP")!.hours).toBeNull()
+    expect(brandContentForLabel("The Launch Pad")!.hours).toBeNull()
   })
 })
 
 describe("knownBrandLabels", () => {
   it("lists the labels that have content", () => {
-    expect(knownBrandLabels().sort()).toEqual(["BUCKET BADDIE", "TLP"])
+    expect(knownBrandLabels().sort()).toEqual(["BUCKET BADDIE", "THE LAUNCH PAD"])
   })
 
   it("stores every key already normalised, so lookups can match", () => {
-    for (const label of knownBrandLabels()) {
+    for (const label of resolvableLabels()) {
       expect(label).toBe(normalizeLabel(label))
+    }
+  })
+
+  it("resolves everything it claims to resolve", () => {
+    for (const label of resolvableLabels()) {
+      expect(brandContentForLabel(label), label).not.toBeNull()
     }
   })
 })
