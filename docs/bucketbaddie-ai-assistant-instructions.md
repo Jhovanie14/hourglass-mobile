@@ -304,6 +304,25 @@ today's production state, making the rewrite a provable no-op for TLP. Adding
 Bucket Baddie to `AI_AGENT_LABELS` in production removes that fallback, so the
 answer surfaces as a loud log on the first call after, never as a wrong price.
 
+### Live as of 2026-08-26
+
+Code deployed (`f35e6a1`) and the shared prompt synced. The assistant is now
+**"Hourglass AI Receptionist"** — renamed from "The Launch Pad Receptionist —
+Test", which was wrong on both counts. Verified against the live assistant:
+name, 2,739-char shared block, brand-agnostic greeting, `tools: []`, and all
+nine variable defaults.
+
+TLP was re-verified by call afterwards — bookings, commercial vehicles,
+Commercial Wash interior, and the tire-shine confusion all answered correctly,
+which proves `{{ brand_rules }}` resolves end to end.
+
+**Still unproven: whether Telnyx sends `brand_label` in the variables webhook
+body.** TLP resolves through the sole-configured-label fallback, so its passing
+tells us nothing about that. It matters the moment Bucket Baddie is added,
+because a second label retires the fallback. The Vercel log line
+`🏷️ AI variables: brand=TLP (resolved via …)` names which path ran and answers
+it for free.
+
 ### Outstanding
 
 1. **The coupons endpoint does not exist.** It has to be built in the BB Laravel

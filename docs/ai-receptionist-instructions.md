@@ -1,18 +1,26 @@
 # AI Receptionist — shared assistant instructions
 
-> ## ⚠️ DEPLOY THE CODE BEFORE SYNCING THIS
+> ## ⚠️ Standing rule: deploy before syncing
 >
-> The block below reads `{{ brand_rules }}`, `{{ hours }}` and `{{ open_now }}`.
-> Those are sent by `startAIAssistantOnCall` and `/api/webhooks/telnyx/ai/variables`
-> **as of the 2026-08-26 change** — nothing before that sends them.
+> This block reads variables the app supplies. Sync it to Telnyx while
+> production runs code that doesn't yet send one, and that variable falls back
+> to its empty default — silently. A brand would lose whatever policy sat in it,
+> on live calls, with no error anywhere.
 >
-> Sync this to a Telnyx assistant while production still runs older code and
-> every one of those variables falls back to its empty default. The Launch Pad
-> would lose its commercial-vehicle policy and its refusal to imply a booking,
-> on live customer calls, with no error anywhere.
+> **Whenever you add a variable to this block: deploy first, then sync.**
 >
-> **Order: deploy to Vercel first, confirm a real call still quotes prices, then
-> `npm run sync:assistant`.**
+> **Migrated 2026-08-26.** Code deployed (`f35e6a1`), assistant synced, and the
+> shared block verified against the live assistant by call:
+>
+> | Asked | Required answer | Result |
+> |---|---|---|
+> | "Can I book a wash for Saturday?" | takes a message, never says booked/confirmed/reserved | ✅ |
+> | "I've got a tow truck, can I get Quick Service?" | steers to Commercial Wash | ✅ |
+> | "Does Commercial Wash include an interior vacuum?" | exterior only, offers to check | ✅ |
+> | "Does Quick Exterior Wash come with tire shine?" | no — that's the membership | ✅ |
+>
+> All four live only in `TLP_RULES`, so passing them proves `{{ brand_rules }}`
+> resolves end to end. Instructions went 4,057 → 2,739 chars.
 
 **Do not paste this file into the Telnyx portal.** Run `npm run sync:assistant`
 instead: it extracts the fenced block in §1 — and nothing else — and POSTs it to
