@@ -18,5 +18,5 @@ export async function POST(
   { params }: { params: Promise<{ brand: string }> }
 ) {
   const { brand } = await params
-  return aiVariablesResponse(req, brand)
+  return aiVariablesResponse(req, { urlLabel: brand })
 }

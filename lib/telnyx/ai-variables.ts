@@ -30,13 +30,21 @@ import { normalizeLabel } from "@/lib/pricing"
 import { fetchCouponsText } from "@/lib/pricing/coupons"
 
 /**
- * @param forcedLabel brand from the URL. When given, no resolution happens and
- *   an unknown value yields no brand keys rather than a guess.
+ * @param opts.urlLabel brand taken from the URL path. Passing the key AT ALL
+ *   makes this request URL-scoped: no runtime resolution happens, and a slug
+ *   that names no known brand yields no brand keys.
+ *
+ *   Presence, not truthiness, is what switches the mode. An empty or missing
+ *   path segment must NOT quietly fall back to guessing — with one brand
+ *   configured that fallback resolves to that brand, so a Bucket Baddie
+ *   webhook would answer with The Launch Pad's name and prices. Failing to
+ *   nothing is recoverable; answering as the wrong business is not.
  */
 export async function aiVariablesResponse(
   req: Request,
-  forcedLabel: string | null = null
+  opts: { urlLabel?: string | null } = {}
 ): Promise<Response> {
+  const urlScoped = "urlLabel" in opts
   const rawBody = await req.text()
   const env = process.env as Record<string, string | undefined>
 
@@ -58,8 +66,8 @@ export async function aiVariablesResponse(
 
   let label: string | null
   let source: string
-  if (forcedLabel) {
-    label = forcedLabel
+  if (urlScoped) {
+    label = opts.urlLabel?.trim() || null
     source = "url"
   } else {
     const settings = aiAgentSettings(env)

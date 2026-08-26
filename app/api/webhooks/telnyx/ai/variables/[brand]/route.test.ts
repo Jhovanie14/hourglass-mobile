@@ -141,3 +141,31 @@ describe("per-brand variables webhook", () => {
     fetchSpy.mockRestore()
   })
 })
+
+describe("an empty slug must not fall back to guessing", () => {
+  it("returns no brand keys instead of the sole configured brand", async () => {
+    // The failure this guards: with one brand in AI_AGENT_LABELS, a fall-through
+    // to runtime resolution answers as THAT brand. Bucket Baddie's webhook would
+    // then hand back The Launch Pad's name and prices — which is exactly what a
+    // caller would hear as the wrong business.
+    process.env.AI_AGENT_LABELS = "The Launch Pad"
+    process.env.TELNYX_AI_ASSISTANT_ID = "assistant-1"
+
+    for (const slug of ["", "   "]) {
+      const body = await POST(req(), { params: Promise.resolve({ brand: slug }) }).then((r) =>
+        r.json()
+      )
+      expect(body.dynamic_variables, `slug=${JSON.stringify(slug)}`).toEqual({
+        agents_available: false,
+        targets: [],
+      })
+      expect(body.dynamic_variables).not.toHaveProperty("brand_name")
+    }
+  })
+
+  it("still answers correctly for a real slug with one brand configured", async () => {
+    process.env.AI_AGENT_LABELS = "The Launch Pad"
+    const body = await call("bucket-baddie")
+    expect(body.dynamic_variables.brand_name).toBe("Bucket Baddie")
+  })
+})
