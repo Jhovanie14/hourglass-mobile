@@ -287,7 +287,7 @@ async function main() {
   if (checks.some(([, ok]) => !ok)) {
     throw new Error("assistant is missing fields after the update — see the backup before recalling")
   }
-  console.log(`\nassistant instructions are now ${after.instructions.length} chars (was 8282).`)
+  console.log(`\nassistant instructions are now ${after.instructions.length} chars.`)
 }
 
 // Only run when invoked directly, so extractInstructions stays unit-testable.
