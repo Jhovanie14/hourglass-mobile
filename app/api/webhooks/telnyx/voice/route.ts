@@ -381,7 +381,6 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
           variables: vars
             ? {
                 pricing: vars.pricing,
-                brand_rules: vars.brand_rules,
                 hours: vars.hours,
                 open_now: vars.open_now,
               }

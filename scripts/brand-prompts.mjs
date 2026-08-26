@@ -1,30 +1,23 @@
-// Per-brand instruction paragraphs, resolving `{{ brand_rules }}`.
+// Per-brand prompt content, baked into each assistant's instructions at sync
+// time rather than resolved over the network at call time.
 //
-// WHY THIS EXISTS. One Telnyx assistant serves every brand, so its instructions
-// block has to be brand-agnostic. Anything true of only one brand — that TLP
-// cannot book a wash, that Bucket Baddie is halal and pickup-only — cannot live
-// in that block, or the assistant carries a car wash's membership policy into a
-// chicken shop call and quietly blends the two.
+// WHY THIS MOVED OUT OF RUNTIME. Brand identity and brand policy never change
+// for a given assistant — Bucket Baddie's assistant is always Bucket Baddie.
+// Sending them as dynamic variables meant a webhook that failed, mismatched, or
+// fell back to the wrong brand could make the Bucket Baddie receptionist quote
+// car wash prices, which is exactly what happened on 2026-08-26. Baking them in
+// makes that impossible: the wrong brand cannot be spoken because the wrong
+// brand is not in the prompt.
 //
-// So brand rules ride along as a dynamic variable, exactly like `{{ pricing }}`.
-// A call only ever sees its own brand's rules.
+// What stays dynamic is only what genuinely changes: prices, hours, whether we
+// are open, and live deals. Each of those degrades to "I don't have that, can I
+// take a message?" if it fails to resolve, which is safe for any brand.
 //
-// WHAT BELONGS HERE vs IN THE PRICING BLOCK. Prices, item names and anything
-// derived from them (the Bucket Baddie price-collision warning) belong in the
-// pricing text, so they cannot drift from the data. This file is for policy:
-// what the assistant may promise, what it must refuse, what it should escalate.
-//
-// Pure strings — no env, DB or SDK — so it unit-tests in plain node.
+// Plain .mjs so scripts/sync-tlp-assistant.mjs can import it directly. It is
+// build-time content, never bundled into the app.
 
-/**
- * The Launch Pad. Lifted from §1 of docs/tlp-ai-assistant-instructions.md, with
- * the brand-agnostic paragraphs (tone, consistency, taking a message) removed —
- * those now live in the shared block.
- *
- * The two "callers get confused" items and the commercial-vehicle rule are the
- * load-bearing ones: they are the mistakes this assistant actually made.
- */
-export const TLP_RULES = `You are a car wash.
+/** The Launch Pad — car wash. */
+const TLP_RULES = `You are a car wash.
 
 Two things callers get confused about, so be explicit:
 - The Quick Service membership includes wheels and tires shine. The one-time
@@ -57,15 +50,8 @@ and when they'd like to come in, and tell them someone will call back to
 confirm. Never say a booking is made, confirmed, reserved, or scheduled, and
 never give an appointment time.`
 
-/**
- * Bucket Baddie. The price-collision rule is deliberately NOT here — it is
- * derived from the menu data and rendered into the pricing block, so it cannot
- * go stale when a price moves.
- *
- * Sources: e-menu.png (2026-08-18), resources/js/pages/Challenge.vue, and the
- * owner's answers on 2026-08-26. See docs/bucketbaddie-ai-discovery.md.
- */
-export const BUCKET_BADDIE_RULES = `You are a halal fried chicken spot in Houston.
+/** Bucket Baddie — halal fried chicken. */
+const BUCKET_BADDIE_RULES = `You are a halal fried chicken spot in Houston.
 
 If someone asks what's on the menu, name a few things and ask what they're
 after. Never read the whole menu aloud.
@@ -89,6 +75,11 @@ placed. Orders are placed on the website, on the delivery apps, or in person. If
 someone wants to order, tell them they can order at bucketbaddie.com or come by,
 and offer to take a message if they'd rather someone called them back. Never say
 an order is placed, confirmed, or on its way, and never give an order time.
+
+DELIVERY
+We don't deliver ourselves, but we're on GrubHub, DoorDash and Uber Eats. If
+someone wants delivery, point them at those. Ordering direct from us is pickup
+only. Do not quote a delivery fee or a delivery area — we don't have either.
 
 THE GHOST MODE CHALLENGE
 Ten Ghost Mode wings — ghost pepper and reaper — in five minutes. It is free to
@@ -121,3 +112,56 @@ All the chicken is one hundred percent halal from certified suppliers. There is
 no pork or pork by-product in the kitchen. You can say that plainly.
 
 Do not comment on how spicy something is beyond the heat levels in the menu.`
+
+/**
+ * Every brand with an AI receptionist.
+ *
+ * `label` must match `phone_numbers.label` exactly — that is what routes a call
+ * to the right assistant. `slug` is the variables-webhook path segment.
+ * `assistantIdEnv` mirrors lib/telnyx/ai-agent.ts's key derivation.
+ */
+export const BRAND_PROMPTS = [
+  {
+    label: "The Launch Pad",
+    slug: "the-launch-pad",
+    displayName: "The Launch Pad",
+    assistantIdEnv: "TELNYX_AI_ASSISTANT_ID",
+    rules: TLP_RULES,
+  },
+  {
+    label: "Bucket Baddie",
+    slug: "bucket-baddie",
+    displayName: "Bucket Baddie",
+    assistantIdEnv: "TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE",
+    rules: BUCKET_BADDIE_RULES,
+  },
+]
+
+/**
+ * The shared block with this brand's identity and policy substituted in, so the
+ * assistant carries them even if the variables webhook never answers.
+ *
+ * Throws rather than shipping a prompt with an unresolved placeholder — an
+ * assistant introducing itself as "{{ brand_name }}" is worse than a failed
+ * sync, and a silently-empty substitution is how the greeting became "Hi,
+ * thanks for calling ." in the first place.
+ */
+export function bakeInstructions(sharedBlock, brand) {
+  const baked = sharedBlock
+    .replaceAll(/\{\{\s*brand_name\s*\}\}/g, brand.displayName)
+    .replaceAll(/\{\{\s*brand_rules\s*\}\}/g, brand.rules)
+
+  if (/\{\{\s*brand_(name|rules|label)\s*\}\}/.test(baked)) {
+    throw new Error(`${brand.label}: a brand placeholder survived substitution`)
+  }
+  if (!baked.includes(brand.displayName)) {
+    throw new Error(`${brand.label}: baked prompt never names the brand`)
+  }
+  for (const other of BRAND_PROMPTS) {
+    if (other.label === brand.label) continue
+    if (baked.includes(other.displayName)) {
+      throw new Error(`${brand.label}: baked prompt mentions ${other.displayName}`)
+    }
+  }
+  return baked
+}

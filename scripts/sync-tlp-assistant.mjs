@@ -14,6 +14,7 @@
 // Env:    TELNYX_API_KEY, TELNYX_AI_ASSISTANT_ID (both read from .env.local)
 
 import { readFileSync } from "node:fs"
+import { BRAND_PROMPTS, bakeInstructions } from "./brand-prompts.mjs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -54,12 +55,10 @@ const ASSISTANT_DESCRIPTION =
  * Telnyx stores these as strings, booleans and arrays included.
  */
 export const DYNAMIC_VARIABLE_DEFAULTS = {
-  // brand_name and brand_label are deliberately ABSENT. Each brand now has its
-  // own assistant, so those are per-assistant identity rather than shared
-  // config, and each one's default names its own brand. Managing them here
-  // would reset every assistant to the same value — which is how the greeting
-  // became "Hi, thanks for calling ." on 2026-08-26.
-  brand_rules: "",
+  // brand_name, brand_label and brand_rules are ABSENT on purpose: they are
+  // baked into each brand's instructions at sync time (see brand-prompts.mjs),
+  // so no webhook result can substitute another brand's identity or policy.
+  // What remains is only what genuinely changes call to call.
   pricing: "",
   hours: "",
   open_now: "unknown",
@@ -224,73 +223,83 @@ async function ensureGroup(apiKey, insightId) {
   return group.id
 }
 
-async function main() {
-  const env = loadEnv()
-  const apiKey = env.TELNYX_API_KEY
-  const assistantId = env.TELNYX_AI_ASSISTANT_ID
-  if (!apiKey || !assistantId) {
-    throw new Error("TELNYX_API_KEY and TELNYX_AI_ASSISTANT_ID must be set (.env.local)")
-  }
+const BASE_URL = (process.env.APP_BASE_URL ?? "https://www.megestic.com").replace(/\/$/, "")
 
-  const instructions = extractInstructions(readFileSync(DOC, "utf8"))
-  console.log(`§1 instructions: ${instructions.length} chars, starts "${instructions.slice(0, 60)}…"`)
-
-  console.log(`name:            "${ASSISTANT_NAME}"`)
-  console.log(`variable defaults: ${JSON.stringify(DYNAMIC_VARIABLE_DEFAULTS)}`)
-
-  if (DRY_RUN) {
-    console.log("--dry-run: nothing sent to Telnyx")
-    return
-  }
-
-  const insightId = await ensureInsight(apiKey)
-  const groupId = await ensureGroup(apiKey, insightId)
-
-  // Assistants update with POST, not PUT — a PUT here 404s, which reads like a
-  // bad assistant id rather than a bad verb. (Insights genuinely do use PUT.)
-  await telnyx(apiKey, "POST", `/ai/assistants/${assistantId}`, {
-    name: ASSISTANT_NAME,
-    description: ASSISTANT_DESCRIPTION,
-    instructions,
+function assistantConfig(brand, sharedBlock) {
+  return {
+    name: `${brand.displayName} Receptionist`,
+    instructions: bakeInstructions(sharedBlock, brand),
+    greeting: `Hi, thanks for calling ${brand.displayName}. Just so you know, this call may be recorded for quality. How can I help you today?`,
+    dynamic_variables_webhook_url: `${BASE_URL}/api/webhooks/telnyx/ai/variables/${brand.slug}`,
     dynamic_variables: DYNAMIC_VARIABLE_DEFAULTS,
+  }
+}
+
+async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
+  const assistantId = env[brand.assistantIdEnv]?.trim()
+  if (!assistantId) {
+    console.log(`\n— ${brand.label}: ${brand.assistantIdEnv} not set, skipping`)
+    return { skipped: true }
+  }
+
+  const cfg = assistantConfig(brand, sharedBlock)
+  console.log(`\n— ${brand.label} (${assistantId})`)
+  console.log(`  instructions: ${cfg.instructions.length} chars`)
+  console.log(`  webhook:      ${cfg.dynamic_variables_webhook_url}`)
+
+  if (DRY_RUN) return { skipped: false, dryRun: true }
+
+  await telnyx(apiKey, "POST", `/ai/assistants/${assistantId}`, {
+    ...cfg,
     insight_settings: { insight_group_id: groupId },
   })
-  console.log(`↻ assistant ${assistantId} updated (name + instructions + defaults + insight group ${groupId})`)
 
-  // Read it back. Telnyx does not document whether a partial POST merges or
-  // replaces, and this assistant carries a greeting, voice settings and the
-  // dynamic-variables webhook that nothing here sends. If a field below comes
-  // back MISSING, the update replaced rather than merged — restore from the
-  // backup rather than guessing at the values.
-  // Assistants come back at the top level; insights come back under `data`.
-  // Reading `.data` here cost a sync run to a TypeError after the update had
-  // already succeeded, so accept either shape.
   const body = await telnyx(apiKey, "GET", `/ai/assistants/${assistantId}`)
   const after = body?.data ?? body
   const checks = [
-    ["instructions", after.instructions?.length === instructions.length],
-    ["name", after.name === ASSISTANT_NAME],
+    ["instructions", after.instructions === cfg.instructions],
+    ["names its own brand", (after.instructions ?? "").includes(brand.displayName)],
+    ["greeting", after.greeting === cfg.greeting],
+    ["webhook", after.dynamic_variables_webhook_url === cfg.dynamic_variables_webhook_url],
     ["insight group", after.insight_settings?.insight_group_id === groupId],
-    ["greeting", Boolean(after.greeting)],
-    ["voice", Boolean(after.voice_settings?.voice)],
-    ["dynamic variables webhook", Boolean(after.dynamic_variables_webhook_url)],
-    ["model", Boolean(after.model)],
-    // Checked by value, not presence: a default that silently kept its old
-    // value is exactly the failure this section was added to catch.
-    ...Object.entries(DYNAMIC_VARIABLE_DEFAULTS).map(([key, want]) => [
-      `default ${key}`,
-      String(after.dynamic_variables?.[key] ?? "") === String(want),
+    ["voice kept", Boolean(after.voice_settings?.voice)],
+    ["model kept", Boolean(after.model)],
+    // The failure this whole change exists to prevent.
+    ...BRAND_PROMPTS.filter((b) => b.label !== brand.label).map((other) => [
+      `does NOT mention ${other.displayName}`,
+      !(after.instructions ?? "").includes(other.displayName),
     ]),
-    // The greeting is portal-managed and must stay brand-agnostic, or every
-    // brand is greeted as whichever one someone typed in there.
-    ["greeting uses {{brand_name}}", /\{\{\s*brand_name\s*\}\}/.test(after.greeting ?? "")],
   ]
-  console.log("\nverifying:")
-  for (const [name, ok] of checks) console.log(`  ${ok ? "✓" : "✗ MISSING"} ${name}`)
+  for (const [name, ok] of checks) console.log(`  ${ok ? "✓" : "✗ FAILED"} ${name}`)
   if (checks.some(([, ok]) => !ok)) {
-    throw new Error("assistant is missing fields after the update — see the backup before recalling")
+    throw new Error(`${brand.label}: assistant did not take the update`)
   }
-  console.log(`\nassistant instructions are now ${after.instructions.length} chars.`)
+  return { skipped: false }
+}
+
+async function main() {
+  const env = loadEnv()
+  const apiKey = env.TELNYX_API_KEY
+  if (!apiKey) throw new Error("TELNYX_API_KEY must be set (.env.local)")
+
+  const sharedBlock = extractInstructions(readFileSync(DOC, "utf8"))
+  console.log(`shared block: ${sharedBlock.length} chars`)
+  console.log(`variable defaults: ${JSON.stringify(DYNAMIC_VARIABLE_DEFAULTS)}`)
+
+  // Bake every brand BEFORE sending anything. bakeInstructions throws on an
+  // unresolved placeholder or a cross-brand mention, and it is far better to
+  // fail with nothing sent than to leave one assistant updated and one not.
+  for (const brand of BRAND_PROMPTS) bakeInstructions(sharedBlock, brand)
+
+  const groupId = DRY_RUN ? "(dry-run)" : await ensureGroup(apiKey, await ensureInsight(apiKey))
+
+  let synced = 0
+  for (const brand of BRAND_PROMPTS) {
+    const result = await syncBrand(apiKey, brand, sharedBlock, groupId, env)
+    if (!result.skipped) synced++
+  }
+
+  console.log(DRY_RUN ? "\n--dry-run: nothing sent to Telnyx" : `\n${synced} assistant(s) updated.`)
 }
 
 // Only run when invoked directly, so extractInstructions stays unit-testable.

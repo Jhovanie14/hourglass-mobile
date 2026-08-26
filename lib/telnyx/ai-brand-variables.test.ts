@@ -43,15 +43,15 @@ describe("brandVariables", () => {
     const tlp = brandVariables("The Launch Pad", OPEN)!
     expect(bb.pricing).not.toContain("The Launch Pad")
     expect(tlp.pricing).not.toContain("Bucket Baddie")
-    expect(bb.brand_rules).not.toMatch(/membership|wash/i)
-    expect(tlp.brand_rules).not.toMatch(/halal|wings/i)
   })
 
-  it("carries each brand's own rules", () => {
-    expect(brandVariables("Bucket Baddie", OPEN)!.brand_rules).toMatch(
-      /^You are a halal fried chicken spot/
-    )
-    expect(brandVariables("The Launch Pad", OPEN)!.brand_rules).toMatch(/^You are a car wash/)
+  it("carries no brand policy — that is baked into each prompt at sync time", () => {
+    // Identity and policy left the runtime on 2026-08-26. Only what genuinely
+    // changes call to call is still sent, so a webhook that answers for the
+    // wrong brand can no longer make one business speak as another.
+    // See scripts/brand-prompts.mjs.
+    expect(brandVariables("Bucket Baddie", OPEN)).not.toHaveProperty("brand_rules")
+    expect(brandVariables("The Launch Pad", OPEN)).not.toHaveProperty("brand_rules")
   })
 })
 

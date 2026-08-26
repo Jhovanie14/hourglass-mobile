@@ -14,7 +14,6 @@ vi.mock("@/lib/admin", () => ({ createAdminClient }))
 import { POST } from "./route"
 import { pricingText } from "@/lib/tlp-pricing"
 import { bucketBaddiePricingText } from "@/lib/pricing/bucketbaddie"
-import { BUCKET_BADDIE_RULES, TLP_RULES } from "@/lib/pricing/rules"
 
 const req = (body: unknown = { data: { payload: {} } }) =>
   new Request("http://test/api/webhooks/telnyx/ai/variables", {
@@ -59,7 +58,6 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
         brand_name: "The Launch Pad",
         brand_label: "THE LAUNCH PAD",
         pricing: pricingText(),
-        brand_rules: TLP_RULES,
         hours: "",
         open_now: "unknown",
       },
@@ -90,7 +88,6 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
         brand_name: "The Launch Pad",
         brand_label: "THE LAUNCH PAD",
         pricing: pricingText(),
-        brand_rules: TLP_RULES,
         hours: "",
         open_now: "unknown",
       },
@@ -131,7 +128,6 @@ describe("brand resolution", () => {
     ).then((r) => r.json())
 
     expect(body.dynamic_variables.pricing).toBe(bucketBaddiePricingText())
-    expect(body.dynamic_variables.brand_rules).toBe(BUCKET_BADDIE_RULES)
     expect(body.dynamic_variables.hours).toContain("- Monday: closed.")
     expect(["yes", "no"]).toContain(body.dynamic_variables.open_now)
   })

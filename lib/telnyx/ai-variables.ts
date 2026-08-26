@@ -98,7 +98,6 @@ export async function aiVariablesResponse(
         brand_name: vars.brand_name,
         brand_label: label ?? "",
         pricing: vars.pricing,
-        brand_rules: vars.brand_rules,
         hours: vars.hours,
         open_now: vars.open_now,
       }

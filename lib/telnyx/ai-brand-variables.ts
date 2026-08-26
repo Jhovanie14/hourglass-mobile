@@ -25,9 +25,6 @@ export type BrandVariables = {
   brand_name: string
   /** `{{ pricing }}` — the brand's menu or price list. */
   pricing: string
-  /** `{{ brand_rules }}` — policy true of this brand only. Keeps a car wash's
-   *  membership rules out of a chicken shop's call on the shared assistant. */
-  brand_rules: string
   /** `{{ hours }}` — empty for a brand with no published hours. */
   hours: string
   /**
@@ -58,7 +55,6 @@ export function brandVariables(
   return {
     brand_name: content.displayName,
     pricing: content.pricingText(),
-    brand_rules: content.rulesText(),
     hours: content.hours ? hoursText(content.hours) : "",
     open_now: content.hours ? (isOpenAt(content.hours, now) ? "yes" : "no") : "unknown",
   }

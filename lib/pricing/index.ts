@@ -16,7 +16,6 @@
 import { pricingText as tlpPricingText } from "@/lib/tlp-pricing"
 import { bucketBaddiePricingText } from "./bucketbaddie"
 import { BUCKET_BADDIE_HOURS, type BrandHours } from "./hours"
-import { BUCKET_BADDIE_RULES, TLP_RULES } from "./rules"
 
 export type BrandContent = {
   /**
@@ -30,8 +29,6 @@ export type BrandContent = {
   displayName: string
   /** Resolves `{{ pricing }}`. */
   pricingText: () => string
-  /** Resolves `{{ brand_rules }}` — policy that is true of this brand only. */
-  rulesText: () => string
   /** Resolves `{{ hours }}` and `{{ open_now }}`. Null where a brand has no
    *  published hours — TLP has never had any in the prompt. */
   hours: BrandHours | null
@@ -65,7 +62,6 @@ const BRANDS: Record<string, BrandContent> = {
   "THE LAUNCH PAD": {
     displayName: "The Launch Pad",
     pricingText: () => tlpPricingText(),
-    rulesText: () => TLP_RULES,
     hours: null,
   },
   // The live label is "Bucket Baddie" — the brand name itself, not a short
@@ -76,7 +72,6 @@ const BRANDS: Record<string, BrandContent> = {
   "BUCKET BADDIE": {
     displayName: "Bucket Baddie",
     pricingText: () => bucketBaddiePricingText(),
-    rulesText: () => BUCKET_BADDIE_RULES,
     hours: BUCKET_BADDIE_HOURS,
   },
 }
