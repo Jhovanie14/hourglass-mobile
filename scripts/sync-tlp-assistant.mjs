@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Push the repo's TLP receptionist config to the live Telnyx assistant:
+// Push the repo's receptionist config to the live Telnyx assistant:
 //
-//   1. `instructions` <- the §1 fenced block of docs/tlp-ai-assistant-instructions.md
+//   1. `instructions` <- the §1 fenced block of docs/ai-receptionist-instructions.md
 //   2. the call-summary insight + its group, attached to the assistant
+//   3. the assistant's name, description and dynamic-variable DEFAULTS
 //
 // Why this exists: on 2026-08-19 the assistant's `instructions` field was found
 // to hold the ENTIRE 8k-char markdown doc — the "paste the block in §1" meta
@@ -17,9 +18,52 @@ import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const DOC = resolve(ROOT, "docs/tlp-ai-assistant-instructions.md")
+// The shared, brand-agnostic block. One assistant serves every AI brand; each
+// brand's prices and policy arrive as dynamic variables at call time, so this
+// file is the only prompt there is. The old per-brand TLP doc is superseded.
+const DOC = resolve(ROOT, "docs/ai-receptionist-instructions.md")
 const API = "https://api.telnyx.com/v2"
 const DRY_RUN = process.argv.includes("--dry-run")
+
+// Matched by NAME against what already exists in Telnyx, so renaming these
+// creates a second insight and a second group rather than renaming the live
+// ones. They read as TLP-only and are not — leave them until someone is willing
+// to clean up the orphans in the portal afterwards.
+// One assistant serves every AI brand, so its name should not claim one. The
+// live name was "The Launch Pad Receptionist — Test" until 2026-08-26: wrong on
+// both counts — brand-specific, and not a test. Callers never hear this; it is
+// the portal label only.
+export const ASSISTANT_NAME = "Hourglass AI Receptionist"
+const ASSISTANT_DESCRIPTION =
+  "Shared receptionist for every AI-enabled brand. Brand facts (menu, prices, policy, hours) arrive as dynamic variables at call time — see docs/ai-receptionist-instructions.md."
+
+/**
+ * Fallbacks Telnyx substitutes when a variable is not supplied — the
+ * dynamic-variables webhook failed, or the start command never set it.
+ *
+ * EVERY VALUE HERE MUST DEGRADE TO "I don't have that, can I take a message?".
+ * That is the one answer that is never wrong for any brand. The live defaults
+ * before this script owned them were `brand_name: "The Launch Pad"` and
+ * `pricing: null` — the first greets a chicken shop caller by a car wash's
+ * name, the second risks rendering the literal string "null" into the prompt.
+ *
+ * Empty `brand_name` leaves the greeting as "Hi, thanks for calling." That is
+ * slightly clipped, and it is the correct trade: a missing name is a stumble,
+ * the wrong name is a different business.
+ *
+ * Telnyx stores these as strings, booleans and arrays included.
+ */
+export const DYNAMIC_VARIABLE_DEFAULTS = {
+  brand_name: "",
+  brand_label: "",
+  brand_rules: "",
+  pricing: "",
+  hours: "",
+  open_now: "unknown",
+  coupons: "",
+  agents_available: "false",
+  targets: "[]",
+}
 
 const INSIGHT_NAME = "TLP call summary"
 const INSIGHT_GROUP_NAME = "TLP Receptionist"
@@ -27,8 +71,11 @@ const INSIGHT_GROUP_NAME = "TLP Receptionist"
 /** The hand-off note the agents team reads in Slack. Written as one structured
  *  insight rather than several so the fields can never arrive half-populated,
  *  and so the format is identical on every call. */
-const INSIGHT_INSTRUCTIONS = `You are reviewing a finished phone call between The Launch Pad's AI receptionist
+const INSIGHT_INSTRUCTIONS = `You are reviewing a finished phone call between a business's AI receptionist
 and a caller. Write a factual hand-off note for the human team.
+
+The business differs from call to call — a car wash, a chicken shop — so take
+what it sells from the transcript itself and never assume an industry.
 
 Report only what is in the transcript. Never guess at intent, and never invent a
 name, number, price, or promise that was not actually said.
@@ -36,7 +83,7 @@ name, number, price, or promise that was not actually said.
 why_they_called — one sentence, the caller's own reason, in plain past tense.
 
 what_the_ai_did — one or two sentences: what was quoted, explained, or
-collected. Name services exactly as the AI named them. If a message was taken,
+collected. Name items and services exactly as the AI named them. If a message was taken,
 say so and include the caller's name and callback number as they gave them.
 
 outcome — one short sentence on how the call ended: message taken, question
@@ -44,7 +91,7 @@ answered, caller declined, caller hung up, and so on.
 
 knowledge_gaps — every question the AI could not answer, one entry each, phrased
 as the missing fact rather than the exchange: "Sunday opening hours", "whether
-we detail motorcycles", "price for a ceramic coating". Include anything the AI
+we cater for 50 people", "price for a ceramic coating". Include anything the AI
 deflected, said it did not have, or promised someone would check. Empty array if
 the AI answered everything it was asked.
 
@@ -185,6 +232,9 @@ async function main() {
   const instructions = extractInstructions(readFileSync(DOC, "utf8"))
   console.log(`§1 instructions: ${instructions.length} chars, starts "${instructions.slice(0, 60)}…"`)
 
+  console.log(`name:            "${ASSISTANT_NAME}"`)
+  console.log(`variable defaults: ${JSON.stringify(DYNAMIC_VARIABLE_DEFAULTS)}`)
+
   if (DRY_RUN) {
     console.log("--dry-run: nothing sent to Telnyx")
     return
@@ -196,10 +246,13 @@ async function main() {
   // Assistants update with POST, not PUT — a PUT here 404s, which reads like a
   // bad assistant id rather than a bad verb. (Insights genuinely do use PUT.)
   await telnyx(apiKey, "POST", `/ai/assistants/${assistantId}`, {
+    name: ASSISTANT_NAME,
+    description: ASSISTANT_DESCRIPTION,
     instructions,
+    dynamic_variables: DYNAMIC_VARIABLE_DEFAULTS,
     insight_settings: { insight_group_id: groupId },
   })
-  console.log(`↻ assistant ${assistantId} updated (instructions + insight group ${groupId})`)
+  console.log(`↻ assistant ${assistantId} updated (name + instructions + defaults + insight group ${groupId})`)
 
   // Read it back. Telnyx does not document whether a partial POST merges or
   // replaces, and this assistant carries a greeting, voice settings and the
@@ -213,11 +266,21 @@ async function main() {
   const after = body?.data ?? body
   const checks = [
     ["instructions", after.instructions?.length === instructions.length],
+    ["name", after.name === ASSISTANT_NAME],
     ["insight group", after.insight_settings?.insight_group_id === groupId],
     ["greeting", Boolean(after.greeting)],
     ["voice", Boolean(after.voice_settings?.voice)],
     ["dynamic variables webhook", Boolean(after.dynamic_variables_webhook_url)],
     ["model", Boolean(after.model)],
+    // Checked by value, not presence: a default that silently kept its old
+    // value is exactly the failure this section was added to catch.
+    ...Object.entries(DYNAMIC_VARIABLE_DEFAULTS).map(([key, want]) => [
+      `default ${key}`,
+      String(after.dynamic_variables?.[key] ?? "") === String(want),
+    ]),
+    // The greeting is portal-managed and must stay brand-agnostic, or every
+    // brand is greeted as whichever one someone typed in there.
+    ["greeting uses {{brand_name}}", /\{\{\s*brand_name\s*\}\}/.test(after.greeting ?? "")],
   ]
   console.log("\nverifying:")
   for (const [name, ok] of checks) console.log(`  ${ok ? "✓" : "✗ MISSING"} ${name}`)

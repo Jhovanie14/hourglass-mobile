@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { extractInstructions } from "./sync-tlp-assistant.mjs"
+import {
+  extractInstructions,
+  ASSISTANT_NAME,
+  DYNAMIC_VARIABLE_DEFAULTS,
+} from "./sync-tlp-assistant.mjs"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const DOC = readFileSync(resolve(ROOT, "docs/tlp-ai-assistant-instructions.md"), "utf8")
@@ -60,5 +64,113 @@ describe("extractInstructions", () => {
     expect(() => extractInstructions(`## §1 Instructions block\n${FENCE}\n\n${FENCE}`)).toThrow(
       /empty/
     )
+  })
+})
+
+// The shared block is what the script actually syncs now. The TLP suite above
+// still guards extractInstructions itself, but this is the file that reaches
+// the live assistant, so it gets its own assertions.
+const SHARED = readFileSync(resolve(ROOT, "docs/ai-receptionist-instructions.md"), "utf8")
+
+describe("the shared brand-agnostic block", () => {
+  it("is what the sync script points at", () => {
+    const source = readFileSync(resolve(ROOT, "scripts/sync-tlp-assistant.mjs"), "utf8")
+    expect(source).toContain('resolve(ROOT, "docs/ai-receptionist-instructions.md")')
+  })
+
+  it("extracts cleanly and carries no meta text", () => {
+    const block = extractInstructions(SHARED)
+    expect(block).toMatch(/^You are the receptionist for \{\{ brand_name \}\}/)
+    expect(block).not.toContain("Do not paste this file")
+    expect(block).not.toContain("§2 What it can")
+    expect(block).not.toContain(CR)
+    expect(block.length).toBeLessThan(SHARED.length / 2)
+  })
+
+  it("names no brand — every brand fact arrives as a variable", () => {
+    // The bug this prevents: one assistant serving two businesses, with the
+    // car wash's policy hardcoded into the chicken shop's call.
+    const block = extractInstructions(SHARED)
+    expect(block).not.toMatch(/Launch Pad|car wash|Bucket Baddie|halal|wings/i)
+  })
+
+  it("declares every variable the routes actually send", () => {
+    const block = extractInstructions(SHARED)
+    for (const variable of [
+      "{{ brand_name }}",
+      "{{ brand_rules }}",
+      "{{ pricing }}",
+      "{{ hours }}",
+      "{{ open_now }}",
+      "{{ coupons }}",
+    ]) {
+      expect(block).toContain(variable)
+    }
+  })
+
+  it("keeps the sections the prompt depends on", () => {
+    const block = extractInstructions(SHARED)
+    for (const heading of [
+      "HOW TO BE CONSISTENT",
+      "WHAT WE SELL AND WHAT IT COSTS",
+      "HOURS",
+      "DEALS",
+      "TRANSFERS",
+      "TAKING A MESSAGE",
+      "WHAT NOT TO DO",
+    ]) {
+      expect(block).toContain(heading)
+    }
+  })
+
+  it("still refuses to promise a transfer", () => {
+    const block = extractInstructions(SHARED)
+    expect(block).toContain("You cannot transfer this call")
+    expect(block).not.toContain("use the transfer tool")
+  })
+
+  it("handles an empty open_now rather than assuming a clock", () => {
+    const block = extractInstructions(SHARED)
+    expect(block).toContain("Never work the current time out yourself")
+    expect(block).toMatch(/If it says unknown/)
+  })
+})
+
+describe("assistant identity and variable defaults", () => {
+  it("does not name one brand on an assistant that serves several", () => {
+    // Was "The Launch Pad Receptionist — Test" on the live assistant until
+    // 2026-08-26 — brand-specific, and not a test.
+    expect(ASSISTANT_NAME).not.toMatch(/Launch Pad|Bucket Baddie|Test/i)
+  })
+
+  it("defaults every variable the shared block reads", () => {
+    const block = extractInstructions(SHARED)
+    for (const key of Object.keys(DYNAMIC_VARIABLE_DEFAULTS)) {
+      if (key === "brand_label" || key === "agents_available" || key === "targets") continue
+      expect(block).toContain(`{{ ${key} }}`)
+    }
+  })
+
+  it("never defaults brand_name to an actual brand", () => {
+    // The live default was "The Launch Pad", which greets a chicken shop
+    // caller by a car wash's name the one time the net is needed.
+    expect(DYNAMIC_VARIABLE_DEFAULTS.brand_name).toBe("")
+  })
+
+  it("defaults pricing to an empty string, never null", () => {
+    // The live default was null, which risks rendering "null" into the prompt.
+    expect(DYNAMIC_VARIABLE_DEFAULTS.pricing).toBe("")
+    expect(DYNAMIC_VARIABLE_DEFAULTS.pricing).not.toBeNull()
+  })
+
+  it("defaults open_now to unknown rather than claiming open or shut", () => {
+    expect(DYNAMIC_VARIABLE_DEFAULTS.open_now).toBe("unknown")
+  })
+
+  it("keeps every default falsy-or-unknown so it degrades to taking a message", () => {
+    for (const [key, value] of Object.entries(DYNAMIC_VARIABLE_DEFAULTS)) {
+      expect(typeof value, `${key} must be a string for Telnyx`).toBe("string")
+      expect(["", "unknown", "false", "[]"], `${key} would assert something`).toContain(value)
+    }
   })
 })

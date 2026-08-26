@@ -131,24 +131,38 @@ export async function startCallTranscription(callControlId: string): Promise<voi
 /** Start the configured Telnyx AI Assistant speaking on an answered caller
  *  leg. The assistant's instructions/greeting reference {{brand_name}} (the
  *  spoken name, e.g. "The Launch Pad") — {{brand_label}} (the short code,
- *  e.g. "TLP") rides along for tooling — so one assistant serves all brands. */
+ *  e.g. "TLP") rides along for tooling — so one assistant serves all brands.
+ *
+ *  `variables` carries the brand's own content ({{pricing}}, {{hours}},
+ *  {{open_now}}). It is set HERE rather than left to the /ai/variables webhook
+ *  because this is the one place the brand is known for certain — it came off
+ *  the `phone_numbers` row that took the call. The webhook only *maybe* knows
+ *  it; see lib/telnyx/ai-brand-variables.ts. */
 export async function startAIAssistantOnCall(params: {
   callControlId: string
   assistantId: string
   brandLabel: string
   brandName: string
+  variables?: Record<string, string>
 }): Promise<void> {
   const telnyx = getTelnyxClient()
   await withRetry(() =>
     telnyx.calls.actions.startAIAssistant(params.callControlId, {
       assistant: {
         id: params.assistantId,
-        dynamic_variables: { brand_name: params.brandName, brand_label: params.brandLabel },
+        dynamic_variables: {
+          brand_name: params.brandName,
+          brand_label: params.brandLabel,
+          ...(params.variables ?? {}),
+        },
       },
       command_id: commandId(),
     })
   )
-  console.log(`🤖 AI assistant ${params.assistantId} started on ${params.callControlId}`)
+  console.log(
+    `🤖 AI assistant ${params.assistantId} started on ${params.callControlId}` +
+      ` (brand=${params.brandLabel}, vars=${Object.keys(params.variables ?? {}).join("|") || "none"})`
+  )
 }
 
 /** Record an AI-handled call: dual channel keeps caller and assistant on

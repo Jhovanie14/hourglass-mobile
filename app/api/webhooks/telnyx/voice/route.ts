@@ -21,6 +21,7 @@ import {
   conversationMessagesToSegments,
   type ConversationMessage,
 } from "@/lib/telnyx/ai-agent"
+import { brandVariables } from "@/lib/telnyx/ai-brand-variables"
 import {
   slackWebhookForLabel,
   buildAIRecordingMessage,
@@ -347,6 +348,17 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
 
     if (aiSettings) {
       try {
+        // Brand content is resolved here, not in the /ai/variables webhook,
+        // because `brandLabel` above came off the phone_numbers row that took
+        // the call — this is the only point where the brand is certain. A
+        // label with no registered content yields null, and we send no content
+        // variables at all rather than another brand's prices.
+        const vars = brandVariables(brandLabel, new Date())
+        if (!vars) {
+          console.warn(
+            `⚠️ No brand content registered for label "${brandLabel}"; assistant starts without pricing`
+          )
+        }
         await startAIAssistantOnCall({
           callControlId: payload.call_control_id,
           assistantId: aiSettings.assistantId,
@@ -355,6 +367,14 @@ async function handleCallAnswered(supabase: SupabaseClient, payload: TelnyxCallP
             brandLabel,
             process.env as Record<string, string | undefined>
           ),
+          variables: vars
+            ? {
+                pricing: vars.pricing,
+                brand_rules: vars.brand_rules,
+                hours: vars.hours,
+                open_now: vars.open_now,
+              }
+            : undefined,
         })
         await supabase
           .from("calls")
