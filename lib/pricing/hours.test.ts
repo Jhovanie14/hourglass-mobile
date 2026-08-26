@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   BUCKET_BADDIE_HOURS,
+  TLP_HOURS,
+  scheduleAt,
+  upcomingChange,
   hoursText,
   isOpenAt,
   nextOpening,
@@ -85,15 +88,20 @@ describe("nextOpening", () => {
   it("returns null when every day is closed", () => {
     const shut = {
       timeZone: "America/Chicago",
-      hours: {
-        monday: null,
-        tuesday: null,
-        wednesday: null,
-        thursday: null,
-        friday: null,
-        saturday: null,
-        sunday: null,
-      },
+      schedules: [
+        {
+          effectiveFrom: null,
+          hours: {
+            monday: null,
+            tuesday: null,
+            wednesday: null,
+            thursday: null,
+            friday: null,
+            saturday: null,
+            sunday: null,
+          },
+        },
+      ],
     }
     expect(nextOpening(shut, AUG(25, 21, 0))).toBeNull()
   })
@@ -129,5 +137,55 @@ describe("hoursText", () => {
     expect(days).toHaveLength(7)
     expect(days[0]).toContain("Monday")
     expect(days[6]).toContain("Sunday")
+  })
+})
+
+describe("scheduled hours changes", () => {
+  // The Launch Pad drops to Thursday–Sunday on 2026-09-18. Both schedules ship
+  // together so the change lands on the day without anyone deploying.
+  const chicago = (iso: string) => new Date(iso)
+  const BEFORE = chicago("2026-09-17T17:00:00Z") // Thu 17 Sep, 12:00 CDT
+  const AFTER = chicago("2026-09-21T17:00:00Z") // Mon 21 Sep, 12:00 CDT
+
+  it("uses the current schedule before the change date", () => {
+    expect(scheduleAt(TLP_HOURS, BEFORE).monday).toEqual({ open: "09:30", close: "18:30" })
+    // Monday 14 Sep at noon — open under the old schedule.
+    expect(isOpenAt(TLP_HOURS, chicago("2026-09-14T17:00:00Z"))).toBe(true)
+  })
+
+  it("switches to Thursday–Sunday on the day, with no deploy", () => {
+    expect(scheduleAt(TLP_HOURS, AFTER).monday).toBeNull()
+    expect(scheduleAt(TLP_HOURS, AFTER).thursday).toEqual({ open: "09:30", close: "18:30" })
+    // The same Monday noon, one week later, is now closed.
+    expect(isOpenAt(TLP_HOURS, AFTER)).toBe(false)
+  })
+
+  it("switches exactly at midnight store time, not UTC", () => {
+    // 04:59 UTC on the 18th is still 23:59 on the 17th in Chicago.
+    expect(scheduleAt(TLP_HOURS, chicago("2026-09-18T04:59:00Z")).monday).not.toBeNull()
+    expect(scheduleAt(TLP_HOURS, chicago("2026-09-18T05:01:00Z")).monday).toBeNull()
+  })
+
+  it("announces the change while it is still ahead, and stops afterwards", () => {
+    const before = hoursText(TLP_HOURS, BEFORE)
+    expect(before).toContain("From 18 September these hours change to:")
+    expect(before).toContain("- Monday: closed.")
+
+    const after = hoursText(TLP_HOURS, AFTER)
+    expect(after).not.toContain("these hours change to")
+    expect(after).toContain("- Monday: closed.")
+  })
+
+  it("quotes The Launch Pad's service hours, which are not the self-service bays", () => {
+    // The bays are 24/7 and always were; that lives in the pricing block, not
+    // here, so this must never claim the site's hours cover them.
+    const text = hoursText(TLP_HOURS, BEFORE)
+    expect(text).toContain("- Monday: 9:30 AM to 6:30 PM.")
+    expect(text).not.toMatch(/24 hours|self-service/i)
+  })
+
+  it("leaves Bucket Baddie unaffected — it has one schedule", () => {
+    expect(upcomingChange(BUCKET_BADDIE_HOURS, BEFORE)).toBeNull()
+    expect(hoursText(BUCKET_BADDIE_HOURS, AFTER)).not.toContain("change to")
   })
 })

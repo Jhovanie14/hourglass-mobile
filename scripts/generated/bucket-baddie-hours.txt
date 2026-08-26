@@ -1,8 +1,0 @@
-Opening hours:
-- Monday: closed.
-- Tuesday: 4 PM to 10 PM.
-- Wednesday: 4 PM to 10 PM.
-- Thursday: 4 PM to 10 PM.
-- Friday: 4 PM to midnight.
-- Saturday: 4 PM to midnight.
-- Sunday: 4 PM to 10 PM.

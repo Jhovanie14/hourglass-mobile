@@ -14,11 +14,17 @@
 // to "I don't have that, can I take a message?" if it fails to resolve, which
 // is safe for any brand.
 //
-// Menus and hours are baked in too, read from scripts/generated/. They are
-// constants in this repo — they change only on deploy — so shipping them over
-// the wire at call time bought nothing and cost the assistant its entire menu
-// whenever the webhook was unreachable or rejected, the Telnyx portal's test
-// tool included. Regenerate with:
+// Menus are baked in too, read from scripts/generated/. The dividing line is
+// what a value depends on:
+//
+//   depends on a DEPLOY  -> bake it (menu, prices, policy, identity)
+//   depends on the CALENDAR or the moment -> send it (hours, open_now, coupons)
+//
+// A baked menu costs nothing and means the assistant still knows what it sells
+// when the webhook is unreachable or rejected — the Telnyx portal's test tool
+// included. Baking HOURS would be a mistake: The Launch Pad drops to
+// Thursday–Sunday on 18 September 2026, and a frozen copy would still be
+// telling callers we open on Mondays. Regenerate the menus with:
 //
 //   npx vitest run lib/pricing/generated-content.test.ts -u
 //
@@ -186,8 +192,6 @@ export const BRAND_PROMPTS = [
     rules: TLP_RULES,
     locationNote: LOCATIONS["The Launch Pad"],
     pricing: generated("the-launch-pad-pricing.txt"),
-    // The Launch Pad publishes no opening hours through the assistant.
-    hours: "",
   },
   {
     label: "Bucket Baddie",
@@ -197,7 +201,6 @@ export const BRAND_PROMPTS = [
     rules: BUCKET_BADDIE_RULES,
     locationNote: LOCATIONS["Bucket Baddie"],
     pricing: generated("bucket-baddie-pricing.txt"),
-    hours: generated("bucket-baddie-hours.txt"),
   },
 ]
 
@@ -218,9 +221,8 @@ export function bakeInstructions(sharedBlock, brand) {
       [brand.rules, brand.locationNote].filter(Boolean).join("\n\n")
     )
     .replaceAll(/\{\{\s*pricing\s*\}\}/g, brand.pricing ?? "")
-    .replaceAll(/\{\{\s*hours\s*\}\}/g, brand.hours ?? "")
 
-  if (/\{\{\s*(brand_name|brand_rules|brand_label|pricing|hours)\s*\}\}/.test(baked)) {
+  if (/\{\{\s*(brand_name|brand_rules|brand_label|pricing)\s*\}\}/.test(baked)) {
     throw new Error(`${brand.label}: a brand placeholder survived substitution`)
   }
   if (!baked.includes(brand.displayName)) {

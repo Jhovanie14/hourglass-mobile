@@ -75,12 +75,14 @@ describe("brandContentForLabel", () => {
     expect(brandContentForLabel(undefined)).toBeNull()
   })
 
-  it("gives Bucket Baddie hours and TLP none", () => {
+  it("gives both brands their own hours", () => {
     const bb = brandContentForLabel("Bucket Baddie")!
-    expect(bb.hours).not.toBeNull()
+    const tlp = brandContentForLabel("The Launch Pad")!
     expect(bb.hours!.timeZone).toBe("America/Chicago")
-    // TLP has never published hours through the assistant.
-    expect(brandContentForLabel("The Launch Pad")!.hours).toBeNull()
+    expect(tlp.hours!.timeZone).toBe("America/Chicago")
+    // The Launch Pad carries two schedules: its hours change on 2026-09-18.
+    expect(tlp.hours!.schedules).toHaveLength(2)
+    expect(bb.hours!.schedules).toHaveLength(1)
   })
 })
 

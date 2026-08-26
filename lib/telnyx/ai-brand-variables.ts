@@ -55,7 +55,7 @@ export function brandVariables(
   return {
     brand_name: content.displayName,
     pricing: content.pricingText(),
-    hours: content.hours ? hoursText(content.hours) : "",
+    hours: content.hours ? hoursText(content.hours, now) : "",
     open_now: content.hours ? (isOpenAt(content.hours, now) ? "yes" : "no") : "unknown",
   }
 }

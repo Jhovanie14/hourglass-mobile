@@ -15,7 +15,7 @@
 
 import { pricingText as tlpPricingText } from "@/lib/tlp-pricing"
 import { bucketBaddiePricingText } from "./bucketbaddie"
-import { BUCKET_BADDIE_HOURS, type BrandHours } from "./hours"
+import { BUCKET_BADDIE_HOURS, TLP_HOURS, type BrandHours } from "./hours"
 
 export type BrandContent = {
   /**
@@ -62,7 +62,7 @@ const BRANDS: Record<string, BrandContent> = {
   "THE LAUNCH PAD": {
     displayName: "The Launch Pad",
     pricingText: () => tlpPricingText(),
-    hours: null,
+    hours: TLP_HOURS,
   },
   // The live label is "Bucket Baddie" — the brand name itself, not a short
   // code. That is why there is no AI_BRAND_NAMES entry for it: brandNameForLabel

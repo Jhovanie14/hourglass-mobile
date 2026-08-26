@@ -98,27 +98,31 @@ describe("bakeInstructions", () => {
     expect(baked).not.toContain("{{ pricing }}")
   })
 
-  it("bakes in the opening hours and the address", () => {
+  it("bakes in the address", () => {
     const baked = bakeInstructions(SHARED, brand("Bucket Baddie"))
-    expect(baked).toContain("- Monday: closed.")
-    expect(baked).toContain("- Friday: 4 PM to midnight.")
     expect(baked).toContain("10410 South Main Street, Houston, Texas 77025")
     expect(baked).toContain("food truck")
-    expect(baked).not.toContain("{{ hours }}")
   })
 
-  it("bakes The Launch Pad's own prices and no hours", () => {
+  it("bakes The Launch Pad's own prices", () => {
     const baked = bakeInstructions(SHARED, brand("The Launch Pad"))
     expect(baked).toContain("Express Complete Detail")
     expect(baked).not.toContain("{{ pricing }}")
-    expect(baked).not.toContain("{{ hours }}")
+  })
+
+  it("does NOT bake hours — they change by the calendar", () => {
+    // The Launch Pad drops to Thursday–Sunday on 18 September 2026. A baked
+    // copy would still be telling callers we open on Mondays.
+    for (const b of BRAND_PROMPTS) {
+      expect(bakeInstructions(SHARED, b), b.label).toContain("{{ hours }}")
+    }
   })
 
   it("leaves as placeholders only what cannot be known at sync time", () => {
     // Whether we are open this minute, live deals, and agent presence. Baking
     // any of those would freeze them at the moment of the last sync.
     const baked = bakeInstructions(SHARED, brand("Bucket Baddie"))
-    for (const v of ["{{ open_now }}", "{{ coupons }}"]) {
+    for (const v of ["{{ hours }}", "{{ open_now }}", "{{ coupons }}"]) {
       expect(baked).toContain(v)
     }
   })

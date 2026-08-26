@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { bucketBaddiePricingText } from "./bucketbaddie"
-import { BUCKET_BADDIE_HOURS, hoursText } from "./hours"
 import { pricingText as tlpPricingText } from "@/lib/tlp-pricing"
 
-// Menus and hours are constants in this repo — they only change when someone
-// deploys. So there is no reason to ship them over the wire at call time, and
-// good reason not to: an assistant whose menu depends on a live webhook has no
-// menu at all when that webhook is unreachable, rejected, or being exercised by
-// the Telnyx portal's test tool. Baking them into the prompt means the
+// Menus are constants in this repo — they only change when someone deploys.
+// Hours are NOT here: they change by the calendar (The Launch Pad drops to
+// Thursday–Sunday on 18 September 2026), so they stay dynamic and are sent at
+// call time.
+//
+// Menus get the opposite treatment. An assistant whose menu depends on a live
+// webhook has no menu at all when that webhook is unreachable, rejected, or
+// being exercised by the Telnyx portal's test tool, so baking it in means the
 // receptionist always knows what it sells.
 //
 // scripts/sync-tlp-assistant.mjs is plain .mjs and cannot import TypeScript, so
@@ -26,12 +28,6 @@ describe("generated prompt content", () => {
   it("matches the Bucket Baddie menu the sync script bakes in", async () => {
     await expect(bucketBaddiePricingText()).toMatchFileSnapshot(
       "../../scripts/generated/bucket-baddie-pricing.txt"
-    )
-  })
-
-  it("matches the Bucket Baddie hours the sync script bakes in", async () => {
-    await expect(hoursText(BUCKET_BADDIE_HOURS)).toMatchFileSnapshot(
-      "../../scripts/generated/bucket-baddie-hours.txt"
     )
   })
 

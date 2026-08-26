@@ -22,13 +22,18 @@ describe("brandVariables", () => {
     expect(brandVariables("Bucket Baddie", CLOSED)!.open_now).toBe("no")
   })
 
-  it("gives TLP its prices, no hours, and an unknown open flag", () => {
-    // TLP has never published hours through the assistant. A boolean would
-    // force a wrong answer here; "unknown" lets the assistant decline.
+  it("gives TLP its prices, its service hours, and a real open flag", () => {
+    // 2026-08-25 16:30 Chicago is inside The Launch Pad's 9:30-6:30 window.
     const vars = brandVariables("The Launch Pad", OPEN)!
     expect(vars.pricing).toContain("The Launch Pad")
-    expect(vars.hours).toBe("")
-    expect(vars.open_now).toBe("unknown")
+    expect(vars.hours).toContain("- Monday: 9:30 AM to 6:30 PM.")
+    expect(vars.open_now).toBe("yes")
+  })
+
+  it("warns TLP callers about the September change while it is still ahead", () => {
+    expect(brandVariables("The Launch Pad", OPEN)!.hours).toContain(
+      "From 18 September these hours change to:"
+    )
   })
 
   it("returns null for an unknown label rather than another brand's prices", () => {
