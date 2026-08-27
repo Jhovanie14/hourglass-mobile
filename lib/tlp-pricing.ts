@@ -29,6 +29,11 @@ export type OneTimeService = {
   /** Null where no time is published — the assistant then states no duration
    *  rather than inventing one. */
   durationMinutes: number | null
+  /** Follows the price when it is not a flat fee, e.g. "to start" on a metered
+   *  bay where the caller tops up as they go. */
+  priceQualifier?: string
+  /** Extra spoken lines after the item — payment methods, holds, conditions. */
+  notes?: string[]
   includes: string[]
   excludes: string[]
 }
@@ -174,20 +179,37 @@ export const TLP_PRICING: BrandPricing = {
     },
     {
       // Pay-per-use access to the same bays the Self-Service Bay membership
-      // covers, for callers who do not want a membership. Duration stays null:
-      // the membership publishes "up to 10 minutes per bay use", and the owner
-      // confirmed on 2026-08-27 that no time limit is published for a single
-      // paid visit, so the assistant states none rather than inventing one.
+      // covers. METERED, not a flat fee: $3 starts it and the caller tops up.
+      //
+      // Corrected 2026-08-28. This was encoded as a flat $10 on 2026-08-27 —
+      // $10 is the card HOLD placed on a tap-to-pay start, not the price. A
+      // caller was being quoted more than three times the real figure.
+      //
+      // Duration stays null: the membership publishes "up to 10 minutes per bay
+      // use" and nobody has confirmed that applies to a paid visit, so the
+      // assistant states none rather than inventing one.
       name: "Self-Service Bay",
-      price: 10.0,
+      price: 3.0,
+      priceQualifier: "to start",
       durationMinutes: null,
       includes: [
         "Access to self-service equipment",
         "No commitment needed",
-        "Pay only when you use it",
         "Open 24 hours a day, 7 days a week",
       ],
       excludes: ["Vacuum is not included"],
+      notes: [
+        "Paying by tap to pay is $5.00 to start, and the card takes a $10.00 hold. Anything unused is released after 48 to 72 hours.",
+      ],
+    },
+    {
+      // Separate machines from the wash bays, and cash only.
+      name: "Self-Service Vacuum",
+      price: 2.0,
+      priceQualifier: "to start",
+      durationMinutes: null,
+      includes: ["Self-service vacuum"],
+      excludes: ["No tap to pay — coins or cash only"],
     },
   ],
 
@@ -238,7 +260,11 @@ export function pricingText(pricing: BrandPricing = TLP_PRICING): string {
   for (const s of pricing.oneTimeServices) {
     const duration =
       s.durationMinutes === null ? "" : `, about ${s.durationMinutes} minutes`
-    lines.push(`- ${s.name}: ${money(s.price)}${duration}. ${s.includes.join(", ")}.`)
+    const qualifier = s.priceQualifier ? ` ${s.priceQualifier}` : ""
+    lines.push(
+      `- ${s.name}: ${money(s.price)}${qualifier}${duration}. ${s.includes.join(", ")}.`
+    )
+    for (const note of s.notes ?? []) lines.push(`  ${note}`)
     if (s.excludes.length > 0) lines.push(`  Not included: ${s.excludes.join(", ")}.`)
   }
 

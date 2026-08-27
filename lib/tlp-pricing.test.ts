@@ -49,18 +49,44 @@ describe("TLP_PRICING", () => {
       "Express Interior Detail",
       "Express Complete Detail",
       "Self-Service Bay",
+      "Self-Service Vacuum",
     ])
   })
 
-  it("offers the self-service bay pay-per-use as well as by membership", () => {
-    // A caller who does not want a membership can still wash: $10 a visit.
+  it("prices the self-service bay at $3 to start, not the $10 card hold", () => {
+    // Encoded as a flat $10 on 2026-08-27 and corrected on the 28th: $10 is the
+    // hold placed on a tap-to-pay start, not the price. Quoting it would have
+    // overstated a wash by more than three times.
     const payPerUse = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Bay")!
-    expect(payPerUse.price).toBe(10)
+    expect(payPerUse.price).toBe(3)
+    expect(payPerUse.priceQualifier).toBe("to start")
     expect(payPerUse.includes).toContain("No commitment needed")
+  })
 
-    // Two visits cost more than a month, which is what makes the upsell true.
+  it("explains tap to pay and the hold in the same breath as the price", () => {
+    // A caller who sees $10 leave their account after being quoted $5 will ring
+    // back angry, so the hold is never mentioned separately from the price.
+    const text = pricingText()
+    expect(text).toMatch(/Self-Service Bay: \$3\.00 to start/)
+    expect(text).toContain("tap to pay is $5.00 to start")
+    expect(text).toContain("$10.00 hold")
+    expect(text).toContain("released after 48 to 72 hours")
+  })
+
+  it("makes no claim that the membership beats a given number of visits", () => {
+    // At $3 to start it no longer pays for itself in two washes, and the bay is
+    // metered so we cannot know what a caller will actually spend.
+    const text = pricingText()
+    expect(text).not.toMatch(/pays for itself in two/i)
     const membership = TLP_PRICING.memberships.find((m) => m.name === "Self-Service Bay")!
-    expect(payPerUse.price * 2).toBeGreaterThan(membership.monthlyPrice)
+    const payPerUse = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Bay")!
+    expect(payPerUse.price * 2).toBeLessThan(membership.monthlyPrice)
+  })
+
+  it("carries the vacuums as their own cash-only item", () => {
+    const vacuum = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Vacuum")!
+    expect(vacuum.price).toBe(2)
+    expect(vacuum.excludes.join(" ")).toMatch(/no tap to pay/i)
   })
 
   it("says the bays run 24/7, on both the membership and the pay-per-use", () => {
@@ -79,8 +105,8 @@ describe("TLP_PRICING", () => {
     // applies to a single paid visit, so the assistant must not claim one.
     const payPerUse = TLP_PRICING.oneTimeServices.find((s) => s.name === "Self-Service Bay")!
     expect(payPerUse.durationMinutes).toBeNull()
-    expect(pricingText()).toMatch(/- Self-Service Bay: \$10\.00\. Access to self-service/)
-    expect(pricingText()).not.toMatch(/Self-Service Bay: \$10\.00, about/)
+    expect(pricingText()).toMatch(/- Self-Service Bay: \$3\.00 to start\. Access to self-service/)
+    expect(pricingText()).not.toMatch(/Self-Service Bay: \$3\.00 to start, about/)
   })
 
   it("excludes every inactive service from the CSV", () => {
