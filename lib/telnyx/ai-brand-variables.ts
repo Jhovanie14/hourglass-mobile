@@ -30,10 +30,16 @@ export type BrandVariables = {
   /**
    * `{{ open_now }}` — tri-state, NOT a boolean.
    *
-   * A boolean forces a brand with no hours (TLP) to claim one or the other,
-   * and both are wrong: "no" turns away a caller we could have served, "yes"
-   * sends someone to a locked door. "unknown" lets the assistant say it cannot
-   * confirm and take a message, which is the only honest third option.
+   * A boolean forces a brand with no registered hours to claim one or the
+   * other, and both are wrong: "no" turns away a caller we could have served,
+   * "yes" sends someone to a locked door. "unknown" lets the assistant say it
+   * cannot confirm and take a message, which is the only honest third option.
+   *
+   * IT ANSWERS FOR THE DATED HOURS ONLY, not for the whole business. The Launch
+   * Pad's self-service bays run 24/7 while its detailing side keeps the hours
+   * this reflects, so `no` here means "the staffed side is shut", never "there
+   * is nothing here for you". The prompt's HOURS section is what holds that
+   * distinction; `{{ hours }}` names the always-open things so it can.
    */
   open_now: "yes" | "no" | "unknown"
 }

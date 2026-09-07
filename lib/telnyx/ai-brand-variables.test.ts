@@ -32,8 +32,23 @@ describe("brandVariables", () => {
 
   it("warns TLP callers about the September change while it is still ahead", () => {
     expect(brandVariables("The Launch Pad", OPEN)!.hours).toContain(
-      "From 18 September these hours change to:"
+      "From 18 September the detailing and service hours change to:"
     )
+  })
+
+  it("still carries the 24/7 bays when TLP's detailing side reads closed", () => {
+    // The pairing this whole separation exists for, at the hour it actually
+    // bites: 2am, well outside 9:30-6:30, so open_now is "no" — and "no" is
+    // exactly when the assistant used to tell the caller the site was shut. The
+    // block it reads that answer from has to name the bays in the same breath.
+    //
+    // Not the shared CLOSED constant: that is 18:00, chosen for Bucket Baddie's
+    // closed Monday, and it sits INSIDE The Launch Pad's 18:30 close.
+    const TLP_SHUT = new Date(Date.UTC(2026, 7, 24, 7, 0)) // Mon 02:00 Chicago
+    const vars = brandVariables("The Launch Pad", TLP_SHUT)!
+    expect(vars.open_now).toBe("no")
+    expect(vars.hours).toContain("Open 24 hours a day, 7 days a week")
+    expect(vars.hours).toContain("- The self-service bays.")
   })
 
   it("returns null for an unknown label rather than another brand's prices", () => {

@@ -231,19 +231,29 @@ async function ensureGroup(apiKey, insightId) {
  * tenth of a second after the caller stopped making noise, so any mid-sentence
  * pause got talked over.
  *
- * `onNumberSeconds` matters most. Taking a message is this assistant's main
+ * `on_number_seconds` matters most. Taking a message is this assistant's main
  * job, and people read a phone number in groups with gaps between them. At
  * 0.1s it interrupted halfway through and captured half a number.
+ *
+ * SLOWED AGAIN 2026-09-07, on the owner's ear rather than a metric: the first
+ * pass (0.9 / 0.5 / 0.3 / 0.8 / 1.2) still answered too quickly to sound like a
+ * person. Every value here is a deliberate step down from that, not a guess.
+ *
+ * There is a ceiling on this, which is why the numbers are not lower still. Past
+ * roughly a second and a half of silence before replying, a phone caller reads
+ * the gap as a dropped call and starts talking again — so the fix for "it feels
+ * rushed" stops being longer waits and becomes the wording in the HOW YOU SOUND
+ * section of the prompt. Change that before lowering these any further.
  *
  * The voice itself is NOT managed here — whichever voice is chosen in the
  * portal is preserved. Only the pacing fields are overwritten.
  */
 const SPEECH = {
-  voice_speed: 0.9,
-  wait_seconds: 0.5,
-  on_punctuation_seconds: 0.3,
-  on_no_punctuation_seconds: 0.8,
-  on_number_seconds: 1.2,
+  voice_speed: 0.85,
+  wait_seconds: 0.8,
+  on_punctuation_seconds: 0.5,
+  on_no_punctuation_seconds: 1.2,
+  on_number_seconds: 2.0,
 }
 
 const BASE_URL = (process.env.APP_BASE_URL ?? "https://www.megestic.com").replace(/\/$/, "")

@@ -60,7 +60,7 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
         pricing: pricingText(),
         // Calendar-dependent now that The Launch Pad publishes hours, so
         // asserted by shape rather than by a value that changes hourly.
-        hours: expect.stringContaining("Opening hours:"),
+        hours: expect.stringContaining("Detailing and service hours"),
         open_now: expect.stringMatching(/^(yes|no)$/),
       },
     })
@@ -83,6 +83,17 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
     expect(["yes", "no"]).toContain(body.dynamic_variables.open_now)
   })
 
+  it("carries the 24/7 bays all the way into the payload", async () => {
+    // End-to-end proof for the 2026-09-07 separation. open_now answers for the
+    // detailing side alone, so this line is the only thing standing between a
+    // 2am caller and being told the whole site is shut — and it is worth
+    // asserting at the boundary, not just in the hours unit test, because the
+    // assistant only ever sees what this route actually sends.
+    const body = await POST(req()).then((r) => r.json())
+    expect(body.dynamic_variables.hours).toContain("Open 24 hours a day, 7 days a week")
+    expect(body.dynamic_variables.hours).toContain("- The self-service bays.")
+  })
+
   it("reports no availability when no agent is online", async () => {
     const res = await POST(req())
 
@@ -95,7 +106,7 @@ describe("POST /api/webhooks/telnyx/ai/variables", () => {
         pricing: pricingText(),
         // Calendar-dependent now that The Launch Pad publishes hours, so
         // asserted by shape rather than by a value that changes hourly.
-        hours: expect.stringContaining("Opening hours:"),
+        hours: expect.stringContaining("Detailing and service hours"),
         open_now: expect.stringMatching(/^(yes|no)$/),
       },
     })

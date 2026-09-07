@@ -168,24 +168,69 @@ describe("scheduled hours changes", () => {
 
   it("announces the change while it is still ahead, and stops afterwards", () => {
     const before = hoursText(TLP_HOURS, BEFORE)
-    expect(before).toContain("From 18 September these hours change to:")
+    expect(before).toContain("From 18 September the detailing and service hours change to:")
     expect(before).toContain("- Monday: closed.")
 
     const after = hoursText(TLP_HOURS, AFTER)
-    expect(after).not.toContain("these hours change to")
+    expect(after).not.toContain("change to")
     expect(after).toContain("- Monday: closed.")
   })
 
-  it("quotes The Launch Pad's service hours, which are not the self-service bays", () => {
-    // The bays are 24/7 and always were; that lives in the pricing block, not
-    // here, so this must never claim the site's hours cover them.
-    const text = hoursText(TLP_HOURS, BEFORE)
-    expect(text).toContain("- Monday: 9:30 AM to 6:30 PM.")
-    expect(text).not.toMatch(/24 hours|self-service/i)
+  it("names the schedule it is changing, not just 'these hours'", () => {
+    // There is now a 24/7 block sitting between the two schedules, so "these
+    // hours change to" would read as if the bays were the thing changing.
+    const before = hoursText(TLP_HOURS, BEFORE)
+    expect(before).not.toContain("these hours change to")
   })
 
   it("leaves Bucket Baddie unaffected — it has one schedule", () => {
     expect(upcomingChange(BUCKET_BADDIE_HOURS, BEFORE)).toBeNull()
     expect(hoursText(BUCKET_BADDIE_HOURS, AFTER)).not.toContain("change to")
+  })
+})
+
+describe("hours that do not cover the whole business", () => {
+  const BEFORE = new Date("2026-09-17T17:00:00Z") // Thu 17 Sep, 12:00 CDT
+  const AFTER = new Date("2026-09-21T17:00:00Z") // Mon 21 Sep, 12:00 CDT
+
+  // REVERSAL, 2026-09-07. This file used to assert the OPPOSITE — that TLP's
+  // hours text must never mention the self-service bays, on the reasoning that
+  // 24/7 is a property of the bays and belongs in the brand rules. The rules do
+  // still say it, and it was not enough: the hours block read as one set of
+  // opening times for the whole site, so the prompt's "if open_now is no, tell
+  // them we're closed" branch fired at 2am and the caller never heard that the
+  // bays were open. The qualification now travels with the hours it qualifies.
+  it("says whose hours these are, so they are not read as the whole site's", () => {
+    const text = hoursText(TLP_HOURS, BEFORE)
+    expect(text).toContain("Detailing and service hours")
+    expect(text).toContain("- Monday: 9:30 AM to 6:30 PM.")
+  })
+
+  it("names what stays open regardless of them", () => {
+    const text = hoursText(TLP_HOURS, BEFORE)
+    expect(text).toContain("Open 24 hours a day, 7 days a week")
+    expect(text).toContain("- The self-service bays.")
+    expect(text).toContain("- The self-service vacuums.")
+  })
+
+  it("puts the 24/7 note between the two schedules, so the change cannot claim it", () => {
+    const text = hoursText(TLP_HOURS, BEFORE)
+    const always = text.indexOf("Open 24 hours a day")
+    const change = text.indexOf("change to:")
+    expect(always).toBeGreaterThan(-1)
+    expect(change).toBeGreaterThan(always)
+  })
+
+  it("still names the bays once the September schedule is in force", () => {
+    const text = hoursText(TLP_HOURS, AFTER)
+    expect(text).toContain("Open 24 hours a day, 7 days a week")
+    expect(text).toContain("- Thursday: 9:30 AM to 6:30 PM.")
+    expect(text).toContain("- Monday: closed.")
+  })
+
+  it("leaves a brand whose hours do cover everything alone", () => {
+    const text = hoursText(BUCKET_BADDIE_HOURS, BEFORE)
+    expect(text.startsWith("Opening hours:")).toBe(true)
+    expect(text).not.toMatch(/24 hours|always open/i)
   })
 })
