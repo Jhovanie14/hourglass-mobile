@@ -230,7 +230,66 @@ describe("hours that do not cover the whole business", () => {
 
   it("leaves a brand whose hours do cover everything alone", () => {
     const text = hoursText(BUCKET_BADDIE_HOURS, BEFORE)
-    expect(text.startsWith("Opening hours:")).toBe(true)
+    expect(text.startsWith("Opening hours.")).toBe(true)
     expect(text).not.toMatch(/24 hours|always open/i)
+  })
+})
+
+describe("the whole week in one line", () => {
+  const BEFORE = new Date("2026-09-17T17:00:00Z") // Thu 17 Sep, 12:00 CDT
+  const AFTER = new Date("2026-09-21T17:00:00Z") // Mon 21 Sep, 12:00 CDT
+
+  // WHY THIS EXISTS. Seven per-day lines answer "are you open Thursday?" and
+  // are the wrong shape for "what time do you open?", which is the question
+  // people actually ring and ask. On 2026-09-07 the assistant was asked it and
+  // said "9:30 to 6:30" with no days at all — it had to collapse the week
+  // itself and simply didn't. The collapsed form is now given to it outright.
+  it("collapses a week of identical days into one range", () => {
+    expect(hoursText(TLP_HOURS, BEFORE)).toContain(
+      "The whole week in one line: 9:30 AM to 6:30 PM, Monday to Sunday."
+    )
+  })
+
+  it("names the open days and the closed run separately", () => {
+    const text = hoursText(TLP_HOURS, AFTER)
+    expect(text).toContain(
+      "The whole week in one line: 9:30 AM to 6:30 PM, Thursday to Sunday. Closed Monday to Wednesday."
+    )
+  })
+
+  it("keeps the day-by-day list underneath it", () => {
+    const text = hoursText(TLP_HOURS, BEFORE)
+    expect(text).toContain("Day by day:")
+    expect(text).toContain("- Monday: 9:30 AM to 6:30 PM.")
+    expect(text.indexOf("The whole week in one line")).toBeLessThan(
+      text.indexOf("Day by day:")
+    )
+  })
+
+  it("handles a week with several different windows", () => {
+    // Bucket Baddie is 4-10 Tue-Thu, 4-midnight Fri-Sat, 4-10 Sunday, shut
+    // Monday — three runs, and Sunday cannot merge with Tuesday because they
+    // are not consecutive.
+    const text = hoursText(BUCKET_BADDIE_HOURS, BEFORE)
+    expect(text).toContain(
+      "The whole week in one line: 4 PM to 10 PM, Tuesday to Thursday; " +
+        "4 PM to midnight, Friday and Saturday; 4 PM to 10 PM, Sunday. Closed Monday."
+    )
+  })
+
+  it("gives the upcoming schedule its own one-liner", () => {
+    const text = hoursText(TLP_HOURS, BEFORE)
+    const change = text.indexOf("change to:")
+    expect(
+      text.indexOf("9:30 AM to 6:30 PM, Thursday to Sunday. Closed Monday to Wednesday.")
+    ).toBeGreaterThan(change)
+  })
+
+  it("tells the assistant to volunteer the change on any hours question", () => {
+    // Previously "mention that only if the caller asks about a date on or after
+    // it" — too narrow. Someone ringing on the 16th to ask what time we open
+    // needs to hear the 18th is different, and will not think to ask.
+    const text = hoursText(TLP_HOURS, BEFORE)
+    expect(text).toContain("whenever someone asks about our hours")
   })
 })

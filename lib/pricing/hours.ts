@@ -288,6 +288,77 @@ function dayLines(hours: WeeklyHours): string[] {
   })
 }
 
+/** "Monday" · "Monday and Tuesday" · "Monday to Wednesday". */
+function dayRange(days: Weekday[]): string {
+  const names = days.map(titleCase)
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  return `${names[0]} to ${names[names.length - 1]}`
+}
+
+type DayRun = { window: DayWindow | null; days: Weekday[] }
+
+/** Consecutive days sharing one window, Monday first. Sunday never merges with
+ *  Tuesday however alike they are — a run has to be contiguous to be spoken as
+ *  a range. */
+function dayRuns(hours: WeeklyHours): DayRun[] {
+  const out: DayRun[] = []
+  for (const day of WEEK_ORDER) {
+    const window = hours[day]
+    const last = out.at(-1)
+    const sameAsLast =
+      last !== undefined &&
+      (last.window === null
+        ? window === null
+        : window !== null &&
+          last.window.open === window.open &&
+          last.window.close === window.close)
+
+    if (sameAsLast) last.days.push(day)
+    else out.push({ window, days: [day] })
+  }
+  return out
+}
+
+/**
+ * The week as one spoken sentence: "9:30 AM to 6:30 PM, Monday to Sunday."
+ *
+ * The per-day list answers "are you open on Thursday?". This answers "what time
+ * do you open?", which is the question people actually ring and ask, and which
+ * the assistant got visibly wrong while it had only the list: asked on
+ * 2026-09-07 it said "9:30 to 6:30" and named no days, because collapsing seven
+ * lines into a range is arithmetic and it skipped it. Both forms now ship.
+ *
+ * Closed days are gathered at the end rather than interleaved, so a week with a
+ * shut run reads "…Thursday to Sunday. Closed Monday to Wednesday." and never
+ * makes the assistant infer a closure from an absence.
+ */
+function summaryLine(hours: WeeklyHours): string {
+  const runs = dayRuns(hours)
+  const open = runs.filter((run) => run.window !== null)
+  if (open.length === 0) return "Closed every day."
+
+  const spans = open.map(
+    (run) =>
+      `${spokenTime(run.window!.open)} to ${spokenTime(run.window!.close)}, ${dayRange(run.days)}`
+  )
+  const closed = runs.filter((run) => run.window === null)
+  const shut = closed.length
+    ? ` Closed ${closed.map((run) => dayRange(run.days)).join(" and ")}.`
+    : ""
+  return `${spans.join("; ")}.${shut}`
+}
+
+/** A schedule in both shapes: the one-liner for the general question, the list
+ *  for a question about one day. */
+function scheduleLines(hours: WeeklyHours): string[] {
+  return [
+    `The whole week in one line: ${summaryLine(hours)}`,
+    "Day by day:",
+    ...dayLines(hours),
+  ]
+}
+
 /** "2026-09-18" -> "18 September". */
 function spokenDate(iso: string): string {
   const [year, month, day] = iso.split("-").map((n) => Number.parseInt(n, 10))
@@ -331,8 +402,8 @@ export function hoursText(
   at: Date = new Date()
 ): string {
   const label = brand.label ?? "Opening hours"
-  const heading = brand.covers ? `${label} — ${brand.covers}:` : `${label}:`
-  const lines = [heading, ...dayLines(scheduleAt(brand, at))]
+  const heading = brand.covers ? `${label} — ${brand.covers}.` : `${label}.`
+  const lines = [heading, ...scheduleLines(scheduleAt(brand, at))]
 
   if (brand.alwaysOpen?.length) {
     lines.push("")
@@ -346,9 +417,9 @@ export function hoursText(
     lines.push(
       `From ${spokenDate(change.effectiveFrom)} the ${lowerFirst(label)} change to:`
     )
-    lines.push(...dayLines(change.hours))
+    lines.push(...scheduleLines(change.hours))
     lines.push(
-      "Mention that only if the caller asks about a date on or after it, or asks whether the hours are changing."
+      "Say this whenever someone asks about our hours, and whenever they ask about a date on or after it."
     )
     if (brand.alwaysOpen?.length) {
       lines.push("That change does not affect anything in the 24/7 list above.")

@@ -84,7 +84,15 @@ describe("the shared brand-agnostic block", () => {
     expect(block).not.toContain("Do not paste this file")
     expect(block).not.toContain("§2 What it can")
     expect(block).not.toContain(CR)
-    expect(block.length).toBeLessThan(SHARED.length / 2)
+
+    // Markdown structure is the honest signal that we took the prompt and not
+    // the document: none of it survives extraction. This replaced a
+    // `block.length < SHARED.length / 2` ratio on 2026-09-07, which asked the
+    // same question by proxy and failed the moment §1 grew past half the file —
+    // a correct extraction of a longer prompt, flagged as a broken one.
+    expect(block).not.toMatch(/^#/m)
+    expect(block).not.toMatch(/^> /m)
+    expect(block).not.toContain("```")
   })
 
   it("names no brand — every brand fact arrives as a variable", () => {

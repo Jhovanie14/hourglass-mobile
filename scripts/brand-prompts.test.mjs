@@ -118,6 +118,21 @@ describe("bakeInstructions", () => {
     }
   })
 
+  it("keeps clock times and day names out of the rules themselves", () => {
+    // The rules DO tell the assistant how to shape an hours answer, which is a
+    // policy and belongs baked. The times and days it fills that shape with
+    // must still come from {{ hours }} — write one into a rules block and it is
+    // a frozen copy that goes stale on 18 September and outlives whoever added
+    // it. This is the guard the "does NOT bake hours" test above cannot give,
+    // since a literal time can sit happily alongside the placeholder.
+    for (const b of BRAND_PROMPTS) {
+      expect(b.rules, b.label).not.toMatch(/\d{1,2}:\d{2}/)
+      expect(b.rules, b.label).not.toMatch(
+        /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
+      )
+    }
+  })
+
   it("leaves as placeholders only what cannot be known at sync time", () => {
     // Whether we are open this minute, live deals, and agent presence. Baking
     // any of those would freeze them at the moment of the last sync.
