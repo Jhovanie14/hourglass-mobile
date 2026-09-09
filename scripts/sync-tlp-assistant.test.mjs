@@ -6,6 +6,7 @@ import {
   extractInstructions,
   ASSISTANT_NAME,
   DYNAMIC_VARIABLE_DEFAULTS,
+  INSIGHT_INSTRUCTIONS,
 } from "./sync-tlp-assistant.mjs"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -175,6 +176,17 @@ describe("assistant identity and variable defaults", () => {
 
   it("defaults open_now to unknown rather than claiming open or shut", () => {
     expect(DYNAMIC_VARIABLE_DEFAULTS.open_now).toBe("unknown")
+  })
+
+  it("writes the Slack hand-off note in English even for a Spanish call", () => {
+    // The agents team reads these in Slack and works in English. A note in
+    // Spanish is a hand-off that does not happen.
+    expect(INSIGHT_INSTRUCTIONS).toMatch(/WRITE THE NOTE IN\nENGLISH REGARDLESS/)
+    expect(INSIGHT_INSTRUCTIONS).toMatch(/which language the\ncaller used/)
+  })
+
+  it("does not translate service names in the hand-off note either", () => {
+    expect(INSIGHT_INSTRUCTIONS).toMatch(/do not translate is the name of a service/)
   })
 
   it("keeps every default falsy-or-unknown so it degrades to taking a message", () => {

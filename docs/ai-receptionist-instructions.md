@@ -48,6 +48,10 @@ membership policy and vice versa.
 | `{{ coupons }}` | live public deals | BB only, flagged off | assistant says it has no deals |
 | `{{ agents_available }}` | presence | `/api/webhooks/telnyx/ai/variables` | `false` |
 
+`{{ language_policy }}` is in the block too but is **not** a runtime variable:
+it is baked at sync time from the brand's `secondLanguage`, and resolves to
+nothing for a single-language brand. See §5.
+
 The assistant's **defaults** are owned by the sync script
 (`DYNAMIC_VARIABLE_DEFAULTS`), not the portal, and were applied live on
 2026-08-26. Every one degrades to "I don't have that, can I take a message?",
@@ -58,10 +62,11 @@ first greets a chicken shop caller by a car wash's name the one time the
 fallback is needed, the second risks rendering the literal string `null` into
 the prompt.
 
-The **greeting** stays portal-managed and is deliberately not overwritten by the
-sync. It already reads `Hi, thanks for calling {{brand_name}}. …`, which is
-brand-agnostic; the sync verifies it still contains `{{brand_name}}` and fails
-if someone hardcodes a brand into it.
+The **greeting** is built per brand by `greetingFor` in
+`scripts/brand-prompts.mjs` and overwritten on every sync, so a portal edit does
+not survive. It is not a template: the brand's own name is written into it at
+sync time, and a bilingual brand's greeting also carries its second-language
+offer, because nothing about the caller can be detected before they speak.
 
 Two places supply these: `startAIAssistantOnCall` at call-start, where the
 brand is certain, and the `/ai/variables` webhook, which tops up presence and
@@ -77,6 +82,8 @@ You are the receptionist for {{ brand_name }}. You answer the phone, answer
 questions, and take messages. This call may be recorded for quality purposes.
 
 {{ brand_rules }}
+
+{{ language_policy }}
 
 HOW YOU SOUND
 Keep every reply short — usually one or two sentences. You are speaking, not
@@ -218,3 +225,42 @@ Almost never edit this block. In order of preference:
 3. Something true of every brand → here, and re-read §2 first.
 
 Then `npm run sync:assistant -- --dry-run`, read the diff, and sync.
+
+## §5 Bilingual brands
+
+A brand is bilingual when its entry in `scripts/brand-prompts.mjs` sets
+`secondLanguage`. **The Launch Pad is (English/Spanish, since 2026-09-10).
+Bucket Baddie is not.**
+
+This is per-brand and not part of the shared block on purpose. The prompt is the
+*last* thing that makes a line bilingual — three settings have to be right
+underneath it first, and a LANGUAGE section on a brand that lacks them is worse
+than no Spanish at all, because the assistant answers in a language it never
+actually heard.
+
+| Layer | Setting | Why it breaks without it |
+|---|---|---|
+| Hearing | `transcription.language: "multi"` | `"en"` forces Spanish through an English acoustic model — it returns English gibberish and the model never sees Spanish |
+| Speaking | a `*MultilingualNeural` voice | Kokoro voices are per-language; `af_heart` reads Spanish with English phonemes |
+| Speaking | `voice_settings.language_boost: null` | pinned to one language, it fights every reply in the other |
+| Thinking | `{{ language_policy }}` in §1 | without it the model has no instruction to mirror the caller |
+
+All four are owned by `npm run sync:assistant` and verified after every sync, so
+none can be reverted in the portal without the next sync putting it back and
+saying so. Setting `secondLanguage` without declaring a `voice` from
+`MULTILINGUAL_VOICE` throws rather than syncing.
+
+**Service names stay in English inside a Spanish reply.** `{{ pricing }}` is
+generated English from `lib/pricing/`. A translated "Quick Exterior Wash" is a
+service nobody at the counter sells, and it stops being distinguishable from
+Quick Service — the exact confusion `TLP_RULES` exists to prevent.
+
+**Known limitation.** Deepgram recommends hinting `["en","es"]` on a known
+bilingual line. Telnyx's assistant API validates the field but does not store
+it — verified 2026-09-10 in three shapes, every accepted write read back `null`.
+So detection runs across all ten Flux languages rather than biased to two. See
+the note on `transcriptionFor` before adding it back.
+
+**Adding a brand:** set `secondLanguage`, `secondLanguageGreeting` and a
+multilingual `voice`, then sync. The greeting has to advertise the second
+language — nothing can be detected before the caller speaks.

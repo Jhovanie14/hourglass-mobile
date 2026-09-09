@@ -171,6 +171,77 @@ no pork or pork by-product in the kitchen. You can say that plainly.
 Do not comment on how spicy something is beyond the heat levels in the menu.`
 
 /**
+ * The LANGUAGE section, for a brand whose line is answered in more than one.
+ *
+ * PER-BRAND ON PURPOSE, not part of the shared block. A brand only gets this
+ * once its Telnyx assistant can actually hear and speak the second language:
+ * `transcription.language` off `"en"`, and a voice that is not English-only.
+ * Bake it into a brand still running English-only STT and the assistant will
+ * try to answer in Spanish having transcribed the caller as English gibberish —
+ * worse than not offering Spanish at all.
+ *
+ * WHY SERVICE NAMES STAY ENGLISH. The pricing block is generated English from
+ * lib/pricing/. Let the model translate "Quick Exterior Wash" and the caller
+ * arrives asking for a "Lavado Exterior Rápido", which nobody at the counter
+ * sells — and which is no longer distinguishable from Quick Service, the exact
+ * confusion the TLP rules exist to prevent.
+ */
+function languagePolicy(brand) {
+  if (!brand.secondLanguage) return ""
+  return `LANGUAGE
+This line is answered in English and ${brand.secondLanguage}. Reply in whichever
+language the caller uses, and switch the moment they switch — some callers open
+in one and move to the other mid-sentence. Never ask a caller to change
+language, and never apologise for the one they chose.
+
+Two things stay in English inside a ${brand.secondLanguage} reply:
+- The name of every service and every plan, exactly as the pricing block writes
+  it. Nobody here knows a service by a name we translated, and a caller who asks
+  for one will be told it does not exist.
+- Anything you are reading back to confirm that was given to you in English — a
+  name spelt out, an email address.
+
+Prices, hours, directions and everything else are spoken naturally in the
+caller's language, with numbers said the way that language says them.
+
+If you cannot tell which language they want, ask once, in both.`
+}
+
+/**
+ * Voices that can hold a conversation in more than one language.
+ *
+ * NOT a general capability lookup — Telnyx's voice list has no multilingual
+ * flag, so this is a hand-kept list of what has actually been listened to.
+ * Azure's `*MultilingualNeural` family keeps one voice identity across ~40
+ * languages, which is the property a bilingual line needs: the caller does not
+ * hear a different person when they switch to Spanish.
+ *
+ * ADDING ONE: generate the same sentence in both languages through
+ * /v2/text-to-speech/speech and listen to it. Kokoro's voices are per-language
+ * and sound like an English speaker guessing at Spanish, which is exactly the
+ * failure this guard exists to catch — they must never be added here.
+ */
+const MULTILINGUAL_VOICE = /MultilingualNeural$/
+
+export function voiceSpeaksMoreThanOneLanguage(voice) {
+  return MULTILINGUAL_VOICE.test(voice ?? "")
+}
+
+/**
+ * What the caller hears before they have said anything.
+ *
+ * Nothing can be detected yet — the caller has not spoken — so a bilingual line
+ * has to advertise itself here or the second language never gets used at all.
+ * Deliberately NOT a full translation of the greeting: doubling it makes every
+ * English caller sit through a Spanish paragraph. One short offer is enough to
+ * tell a Spanish speaker they are in the right place.
+ */
+export function greetingFor(brand) {
+  const english = `Hi, thanks for calling ${brand.displayName}. Just so you know, this call may be recorded for quality. How can I help you today?`
+  return brand.secondLanguageGreeting ? `${english} ${brand.secondLanguageGreeting}` : english
+}
+
+/**
  * Where each brand is, as the receptionist says it.
  *
  * Held apart from `rules` because both businesses share one address — Bucket
@@ -209,6 +280,15 @@ export const BRAND_PROMPTS = [
     rules: TLP_RULES,
     locationNote: LOCATIONS["The Launch Pad"],
     pricing: generated("the-launch-pad-pricing.txt"),
+    // Bilingual. Requires the live assistant to be off English-only STT and on
+    // a multilingual voice — see docs/ai-receptionist-instructions.md §5.
+    secondLanguage: "Spanish",
+    secondLanguageGreeting: "También le puedo atender en español.",
+    // Declared here rather than left to the portal BECAUSE it is bilingual: the
+    // previous voice (Telnyx.KokoroTTS.af_heart) is en-US only, and Kokoro's
+    // voices are per-language, so no setting could have made it speak Spanish.
+    // Chosen on 2026-09-10 by listening to candidates side by side.
+    voice: "Azure.en-US-AvaMultilingualNeural",
   },
   {
     label: "Bucket Baddie",
@@ -231,6 +311,7 @@ export const BRAND_PROMPTS = [
  * thanks for calling ." in the first place.
  */
 export function bakeInstructions(sharedBlock, brand) {
+  const policy = languagePolicy(brand)
   const baked = sharedBlock
     .replaceAll(/\{\{\s*brand_name\s*\}\}/g, brand.displayName)
     .replaceAll(
@@ -238,12 +319,24 @@ export function bakeInstructions(sharedBlock, brand) {
       [brand.rules, brand.locationNote].filter(Boolean).join("\n\n")
     )
     .replaceAll(/\{\{\s*pricing\s*\}\}/g, brand.pricing ?? "")
+    // Swallow the surrounding blank lines with the placeholder, so a
+    // single-language brand gets no stray gap where the section would be.
+    .replaceAll(/\n*\{\{\s*language_policy\s*\}\}\n*/g, policy ? `\n\n${policy}\n\n` : "\n\n")
 
-  if (/\{\{\s*(brand_name|brand_rules|brand_label|pricing)\s*\}\}/.test(baked)) {
+  if (/\{\{\s*(brand_name|brand_rules|brand_label|pricing|language_policy)\s*\}\}/.test(baked)) {
     throw new Error(`${brand.label}: a brand placeholder survived substitution`)
   }
   if (!baked.includes(brand.displayName)) {
     throw new Error(`${brand.label}: baked prompt never names the brand`)
+  }
+  // Silent monolingualism is the failure mode here: drop {{ language_policy }}
+  // from the shared block and a bilingual brand keeps syncing cleanly while
+  // answering every Spanish caller in English. Nothing else would notice.
+  if (policy && !baked.includes(policy)) {
+    throw new Error(
+      `${brand.label}: is bilingual but the baked prompt carries no LANGUAGE section — ` +
+        `is {{ language_policy }} still in the shared block?`
+    )
   }
   for (const other of BRAND_PROMPTS) {
     if (other.label === brand.label) continue

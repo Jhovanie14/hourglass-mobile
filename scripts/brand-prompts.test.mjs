@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { BRAND_PROMPTS, bakeInstructions } from "./brand-prompts.mjs"
+import {
+  BRAND_PROMPTS,
+  bakeInstructions,
+  greetingFor,
+  voiceSpeaksMoreThanOneLanguage,
+} from "./brand-prompts.mjs"
 import { extractInstructions } from "./sync-tlp-assistant.mjs"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -175,5 +180,116 @@ describe("bakeInstructions", () => {
       pricing: brand("The Launch Pad").pricing,
     }
     expect(() => bakeInstructions(SHARED, poisoned)).toThrow(/carries The Launch Pad's prices/)
+  })
+})
+
+describe("bilingual brands", () => {
+  const tlp = () => brand("The Launch Pad")
+
+  it("gives The Launch Pad Spanish and leaves Bucket Baddie English-only", () => {
+    // Not a shared-block setting: Bucket Baddie's assistant is still on
+    // English-only STT, so a LANGUAGE section there would have it answering in
+    // Spanish having transcribed the caller as English gibberish.
+    expect(tlp().secondLanguage).toBe("Spanish")
+    expect(brand("Bucket Baddie").secondLanguage).toBeUndefined()
+  })
+
+  it("bakes a LANGUAGE section only into the bilingual brand", () => {
+    expect(bakeInstructions(SHARED, tlp())).toContain("LANGUAGE")
+    expect(bakeInstructions(SHARED, brand("Bucket Baddie"))).not.toContain("LANGUAGE")
+  })
+
+  it("leaves no placeholder or stray gap for a single-language brand", () => {
+    const bb = bakeInstructions(SHARED, brand("Bucket Baddie"))
+    expect(bb).not.toMatch(/\{\{\s*language_policy\s*\}\}/)
+    expect(bb).not.toMatch(/\n{3,}/)
+  })
+
+  it("tells the assistant to switch language mid-call, not to ask the caller to", () => {
+    const baked = bakeInstructions(SHARED, tlp())
+    expect(baked).toMatch(/switch the moment they switch/)
+    expect(baked).toMatch(/Never ask a caller to change\nlanguage/)
+  })
+
+  it("keeps service names in English inside a Spanish reply", () => {
+    // The real risk: "Quick Exterior Wash" translated to something nobody at
+    // the counter sells, and no longer distinguishable from Quick Service.
+    const baked = bakeInstructions(SHARED, tlp())
+    expect(baked).toMatch(/stay in English/)
+    expect(baked).toMatch(/exactly as the pricing block writes/)
+  })
+
+  it("throws if the shared block loses the placeholder a bilingual brand needs", () => {
+    // Silent monolingualism: syncs clean, answers every Spanish caller in
+    // English, and nothing else in the pipeline would notice.
+    const noPlaceholder = SHARED.replaceAll(/\{\{\s*language_policy\s*\}\}/g, "")
+    expect(() => bakeInstructions(noPlaceholder, tlp())).toThrow(/carries no LANGUAGE section/)
+  })
+
+  it("does not throw for a single-language brand when the placeholder is gone", () => {
+    const noPlaceholder = SHARED.replaceAll(/\{\{\s*language_policy\s*\}\}/g, "")
+    expect(() => bakeInstructions(noPlaceholder, brand("Bucket Baddie"))).not.toThrow()
+  })
+})
+
+describe("voiceSpeaksMoreThanOneLanguage", () => {
+  it("every bilingual brand declares a voice that can actually speak the second language", () => {
+    // The guard that matters. An English-only voice does not error — it reads
+    // Spanish with English phonemes, so it sounds like the feature works.
+    for (const b of BRAND_PROMPTS.filter((b) => b.secondLanguage)) {
+      expect(b.voice, `${b.label} must declare a voice, not inherit the portal's`).toBeTruthy()
+      expect(voiceSpeaksMoreThanOneLanguage(b.voice), `${b.label}: ${b.voice}`).toBe(true)
+    }
+  })
+
+  it("rejects the Kokoro voice The Launch Pad used to be on", () => {
+    // Kokoro voices are per-language: af_heart is en-US and there is no setting
+    // that makes it speak Spanish.
+    expect(voiceSpeaksMoreThanOneLanguage("Telnyx.KokoroTTS.af_heart")).toBe(false)
+    expect(voiceSpeaksMoreThanOneLanguage("Telnyx.KokoroTTS.ef_dora")).toBe(false)
+  })
+
+  it("rejects a missing voice rather than assuming it is fine", () => {
+    expect(voiceSpeaksMoreThanOneLanguage(undefined)).toBe(false)
+    expect(voiceSpeaksMoreThanOneLanguage("")).toBe(false)
+  })
+
+  it("accepts the Azure multilingual family", () => {
+    expect(voiceSpeaksMoreThanOneLanguage("Azure.en-US-AvaMultilingualNeural")).toBe(true)
+    expect(voiceSpeaksMoreThanOneLanguage("Azure.es-MX-DaliaMultilingualNeural")).toBe(true)
+  })
+
+  it("leaves a single-language brand free to be tuned in the portal", () => {
+    // Bucket Baddie deliberately declares no voice: someone can change it by
+    // ear without a deploy, and the sync preserves whatever they chose.
+    expect(BRAND_PROMPTS.find((b) => b.label === "Bucket Baddie").voice).toBeUndefined()
+  })
+})
+
+describe("greetingFor", () => {
+  it("advertises Spanish, because nothing can be detected before they speak", () => {
+    const greeting = greetingFor(brand("The Launch Pad"))
+    expect(greeting).toContain("thanks for calling The Launch Pad")
+    expect(greeting).toContain("También le puedo atender en español.")
+  })
+
+  it("does not make English callers sit through a full translation", () => {
+    // One short offer, not a doubled greeting.
+    const greeting = greetingFor(brand("The Launch Pad"))
+    expect(greeting.match(/thanks for calling/gi)).toHaveLength(1)
+    expect(greeting.length).toBeLessThan(200)
+  })
+
+  it("leaves a single-language brand's greeting untouched", () => {
+    const greeting = greetingFor(brand("Bucket Baddie"))
+    expect(greeting).toBe(
+      "Hi, thanks for calling Bucket Baddie. Just so you know, this call may be recorded for quality. How can I help you today?"
+    )
+  })
+
+  it("still carries the recording notice on both brands", () => {
+    for (const b of BRAND_PROMPTS) {
+      expect(greetingFor(b), b.label).toContain("may be recorded for quality")
+    }
   })
 })

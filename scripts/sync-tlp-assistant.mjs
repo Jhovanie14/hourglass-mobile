@@ -14,7 +14,12 @@
 // Env:    TELNYX_API_KEY, TELNYX_AI_ASSISTANT_ID (both read from .env.local)
 
 import { readFileSync } from "node:fs"
-import { BRAND_PROMPTS, bakeInstructions } from "./brand-prompts.mjs"
+import {
+  BRAND_PROMPTS,
+  bakeInstructions,
+  greetingFor,
+  voiceSpeaksMoreThanOneLanguage,
+} from "./brand-prompts.mjs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -73,7 +78,7 @@ const INSIGHT_GROUP_NAME = "TLP Receptionist"
 /** The hand-off note the agents team reads in Slack. Written as one structured
  *  insight rather than several so the fields can never arrive half-populated,
  *  and so the format is identical on every call. */
-const INSIGHT_INSTRUCTIONS = `You are reviewing a finished phone call between a business's AI receptionist
+export const INSIGHT_INSTRUCTIONS = `You are reviewing a finished phone call between a business's AI receptionist
 and a caller. Write a factual hand-off note for the human team.
 
 The business differs from call to call — a car wash, a chicken shop — so take
@@ -81,6 +86,14 @@ what it sells from the transcript itself and never assume an industry.
 
 Report only what is in the transcript. Never guess at intent, and never invent a
 name, number, price, or promise that was not actually said.
+
+Some lines are answered in more than one language, so the call may have been
+held wholly or partly in a language other than English. WRITE THE NOTE IN
+ENGLISH REGARDLESS — the team reading it in Slack works in English, and a note
+they cannot read is a hand-off that does not happen. Translate what was said.
+The one thing you do not translate is the name of a service or plan: give those
+exactly as the AI said them, and say in why_they_called which language the
+caller used.
 
 why_they_called — one sentence, the caller's own reason, in plain past tense.
 
@@ -256,13 +269,51 @@ const SPEECH = {
   on_number_seconds: 2.0,
 }
 
+/**
+ * Speech-to-text, derived from the brand rather than left to the portal.
+ *
+ * WHY THIS IS MANAGED HERE NOW. It was portal-only until bilingual, which made
+ * it the one setting the whole feature depends on that nothing in the repo
+ * verified: `language: "en"` forces Spanish audio through an English acoustic
+ * model, so it comes back as English gibberish and the model never sees Spanish
+ * at all. No prompt wording survives that. Someone flipping it back in the
+ * portal would break every Spanish call and no test, sync or check would notice.
+ *
+ * `"multi"` is Deepgram Flux Multilingual, auto-detecting across all ten of its
+ * languages. Telnyx also offers `"auto"`, which detects once and then applies a
+ * single-language hint — lower latency and better per-language accuracy, but it
+ * commits to one language. We do NOT use it: a caller who opens in English and
+ * slides into Spanish mid-sentence ("hola, quiero el Quick Exterior Wash") is
+ * the normal case on this line, and the half of that sentence `"auto"` is most
+ * likely to mis-hear is the service name — the part that drives the quote.
+ *
+ * NO LANGUAGE HINTS, and not for want of trying. Deepgram's own guidance is to
+ * hint `["en","es"]` for a known bilingual line, and Telnyx's assistant API
+ * validates the field (a string is rejected with "Expected array type") — but
+ * it does not persist it. Verified 2026-09-10 against the live assistant in
+ * three shapes: `transcription.settings.language_hints` and
+ * `transcription.language_hints`, array and CSV. Every accepted write read back
+ * as null. Setting it here would be a line of code that looks like it tunes
+ * accuracy and does nothing, so it is deliberately absent. Re-test before
+ * assuming this is still true.
+ *
+ * The MODEL is preserved, like the voice: whatever is chosen in the portal
+ * stays. Only the language field is ours.
+ */
+function transcriptionFor(brand, current) {
+  return {
+    ...(current ?? {}),
+    language: brand.secondLanguage ? "multi" : "en",
+  }
+}
+
 const BASE_URL = (process.env.APP_BASE_URL ?? "https://www.megestic.com").replace(/\/$/, "")
 
 function assistantConfig(brand, sharedBlock) {
   return {
     name: `${brand.displayName} Receptionist`,
     instructions: bakeInstructions(sharedBlock, brand),
-    greeting: `Hi, thanks for calling ${brand.displayName}. Just so you know, this call may be recorded for quality. How can I help you today?`,
+    greeting: greetingFor(brand),
     dynamic_variables_webhook_url: `${BASE_URL}/api/webhooks/telnyx/ai/variables/${brand.slug}`,
     dynamic_variables: DYNAMIC_VARIABLE_DEFAULTS,
   }
@@ -289,10 +340,33 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
   const prior = current.interruption_settings ?? {}
   const priorPlan = prior.start_speaking_plan ?? {}
 
+  // Refuse the sync rather than leave a bilingual brand mute in its second
+  // language. An English-only voice does not fail — it reads Spanish text with
+  // English phonemes, which is worse than an error because it sounds like the
+  // feature works.
+  const wantedVoice = brand.voice ?? current.voice_settings?.voice
+  if (brand.secondLanguage && !voiceSpeaksMoreThanOneLanguage(wantedVoice)) {
+    throw new Error(
+      `${brand.label}: is bilingual but "${wantedVoice}" is not a known multilingual voice — ` +
+        `it would read ${brand.secondLanguage} with English phonemes. See MULTILINGUAL_VOICE.`
+    )
+  }
+
   await telnyx(apiKey, "POST", `/ai/assistants/${assistantId}`, {
     ...cfg,
     insight_settings: { insight_group_id: groupId },
-    voice_settings: { ...(current.voice_settings ?? {}), voice_speed: SPEECH.voice_speed },
+    transcription: transcriptionFor(brand, current.transcription),
+    voice_settings: {
+      ...(current.voice_settings ?? {}),
+      // A brand may declare its voice; otherwise the portal's choice stands, so
+      // it can still be tuned by ear without a deploy.
+      voice: wantedVoice,
+      voice_speed: SPEECH.voice_speed,
+      // A bilingual brand must not carry a language_boost pinned to one
+      // language — Bucket Baddie's was "English" — or the TTS fights every
+      // Spanish reply it is asked to speak. Neutral is the only safe value.
+      ...(brand.secondLanguage ? { language_boost: null } : {}),
+    },
     interruption_settings: {
       ...prior,
       start_speaking_plan: {
@@ -316,7 +390,7 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
     ["greeting", after.greeting === cfg.greeting],
     ["webhook", after.dynamic_variables_webhook_url === cfg.dynamic_variables_webhook_url],
     ["insight group", after.insight_settings?.insight_group_id === groupId],
-    ["voice kept", after.voice_settings?.voice === current.voice_settings?.voice],
+    ["voice", after.voice_settings?.voice === wantedVoice],
     ["speech slowed", after.voice_settings?.voice_speed === SPEECH.voice_speed],
     [
       "waits before replying",
@@ -328,6 +402,24 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
         ?.on_number_seconds === SPEECH.on_number_seconds,
     ],
     ["model kept", Boolean(after.model)],
+    ["stt model kept", after.transcription?.model === current.transcription?.model],
+    [
+      brand.secondLanguage ? "stt hears both languages" : "stt is English-only",
+      after.transcription?.language === (brand.secondLanguage ? "multi" : "en"),
+    ],
+    // Only meaningful for a bilingual brand, but asserted for every brand so a
+    // brand that LOSES its second language is checked back down to English
+    // rather than quietly left in multi mode.
+    ...(brand.secondLanguage
+      ? [
+          ["prompt carries the LANGUAGE section", (after.instructions ?? "").includes("LANGUAGE")],
+          [
+            "greeting offers the second language",
+            (after.greeting ?? "").includes(brand.secondLanguageGreeting ?? " "),
+          ],
+          ["no language_boost fighting the second language", !after.voice_settings?.language_boost],
+        ]
+      : []),
     // The failure this whole change exists to prevent. Mirrors the guard in
     // bakeInstructions: another brand's rules or prices must not appear at
     // all, and its NAME may appear only inside this brand's location note —
