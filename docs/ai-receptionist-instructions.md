@@ -41,7 +41,7 @@ membership policy and vice versa.
 | Variable | Carries | Source | When empty |
 |---|---|---|---|
 | `{{ brand_name }}` | spoken name | `AI_BRAND_NAMES`, else the label itself | — |
-| `{{ brand_rules }}` | that brand's policy | `lib/pricing/rules.ts` | block reads oddly — treat as a bug |
+| `{{ brand_rules }}` | that brand's policy | `scripts/brand-prompts.mjs` | block reads oddly — treat as a bug |
 | `{{ pricing }}` | menu or price list | `lib/pricing/*` per brand | assistant says it can't quote |
 | `{{ hours }}` | opening hours | `lib/pricing/hours.ts` | assistant can't confirm hours |
 | `{{ open_now }}` | `yes` / `no` / `unknown` | computed in the brand's timezone | treated as `unknown` |
@@ -65,8 +65,8 @@ the prompt.
 The **greeting** is built per brand by `greetingFor` in
 `scripts/brand-prompts.mjs` and overwritten on every sync, so a portal edit does
 not survive. It is not a template: the brand's own name is written into it at
-sync time, and a bilingual brand's greeting also carries its second-language
-offer, because nothing about the caller can be detected before they speak.
+sync time. It opens in English for every brand, bilingual ones included — see
+§5 — unless that brand sets `secondLanguageGreeting`.
 
 Two places supply these: `startAIAssistantOnCall` at call-start, where the
 brand is certain, and the `/ai/variables` webhook, which tops up presence and
@@ -257,7 +257,7 @@ whether we're open, read out live deals, and take a message.
    ordering path wired to the phone line. Each brand's `{{ brand_rules }}`
    spells out what to say instead.
 3. **Know anything not in its variables.** Add it to that brand's entry in
-   `lib/pricing/rules.ts`, not to this block.
+   `scripts/brand-prompts.mjs`, not to this block.
 
 ## §3 Per-brand notes
 
@@ -273,8 +273,12 @@ Almost never edit this block. In order of preference:
 
 1. A price or item → the brand's module under `lib/pricing/`.
 2. A policy, a thing to refuse, a thing to escalate → that brand's constant in
-   `lib/pricing/rules.ts`.
-3. Something true of every brand → here, and re-read §2 first.
+   `scripts/brand-prompts.mjs`.
+3. A plain fact about the business — its website, its address → that brand's
+   entry in `scripts/brand-prompts.mjs`. Facts get their own field and their own
+   rendered section, so every brand answers for them identically; do not write
+   one into a `rules` paragraph.
+4. Something true of every brand → here, and re-read §2 first.
 
 Then `npm run sync:assistant -- --dry-run`, read the diff, and sync.
 

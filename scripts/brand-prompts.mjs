@@ -215,6 +215,34 @@ language they last used, not in both.`
 }
 
 /**
+ * The brand's public website.
+ *
+ * Structural rather than a sentence inside `rules` so every brand answers "what
+ * is your website?" the same way. The Launch Pad had no website anywhere in its
+ * prompt until 2026-09-11 and simply did not know it had one — a caller asked
+ * and got "I don't have that", which is the correct behaviour for a fact the
+ * assistant was never given, and the wrong answer to give about your own site.
+ *
+ * The "never invent a page" line is load-bearing. A model that knows
+ * thelaunchpadwash.com will happily offer /booking, /prices or /contact when it
+ * suits the sentence, and a caller sent to a 404 is worse off than one who was
+ * given nothing.
+ */
+function websiteNote(brand) {
+  if (!brand.website) return ""
+  return `OUR WEBSITE
+${brand.website}
+
+Give it to anyone who asks how to find us online, asks to see the full menu or
+list of services, or wants to look something up for themselves. Say it slowly
+and clearly: a web address read at speed is one nobody writes down.
+
+Say that address and nothing more. Never add a page or a path to the end of it,
+never spell out "www" or "https", and never offer a second link, a social
+account or an email you have not been given here.`
+}
+
+/**
  * Voices that can hold a conversation in more than one language.
  *
  * NOT a general capability lookup — Telnyx's voice list has no multilingual
@@ -294,6 +322,7 @@ export const BRAND_PROMPTS = [
     rules: TLP_RULES,
     locationNote: LOCATIONS["The Launch Pad"],
     pricing: generated("the-launch-pad-pricing.txt"),
+    website: "thelaunchpadwash.com",
     // Bilingual. Requires the live assistant to be off English-only STT and on
     // a multilingual voice — see docs/ai-receptionist-instructions.md §5.
     secondLanguage: "Spanish",
@@ -313,6 +342,7 @@ export const BRAND_PROMPTS = [
     rules: BUCKET_BADDIE_RULES,
     locationNote: LOCATIONS["Bucket Baddie"],
     pricing: generated("bucket-baddie-pricing.txt"),
+    website: "bucketbaddie.com",
   },
 ]
 
@@ -331,7 +361,7 @@ export function bakeInstructions(sharedBlock, brand) {
     .replaceAll(/\{\{\s*brand_name\s*\}\}/g, brand.displayName)
     .replaceAll(
       /\{\{\s*brand_rules\s*\}\}/g,
-      [brand.rules, brand.locationNote].filter(Boolean).join("\n\n")
+      [brand.rules, brand.locationNote, websiteNote(brand)].filter(Boolean).join("\n\n")
     )
     .replaceAll(/\{\{\s*pricing\s*\}\}/g, brand.pricing ?? "")
     // Swallow the surrounding blank lines with the placeholder, so a
@@ -363,6 +393,12 @@ export function bakeInstructions(sharedBlock, brand) {
     }
     if (other.pricing && baked.includes(other.pricing)) {
       throw new Error(`${brand.label}: baked prompt carries ${other.displayName}'s prices`)
+    }
+    // Slips past the displayName check below, which is why it is its own test:
+    // "bucketbaddie.com" does not contain the string "Bucket Baddie", so a
+    // website sent to the wrong brand would leak silently.
+    if (other.website && baked.includes(other.website)) {
+      throw new Error(`${brand.label}: baked prompt carries ${other.displayName}'s website`)
     }
 
     // The name itself is allowed ONLY inside this brand's location note, where

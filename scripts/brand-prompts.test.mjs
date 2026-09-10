@@ -241,6 +241,46 @@ describe("bilingual brands", () => {
   })
 })
 
+describe("the brand's website", () => {
+  it("gives every brand one, so none of them is stumped by 'what's your website?'", () => {
+    // The Launch Pad had no website in its prompt at all until 2026-09-11 and
+    // answered "I don't have that" about its own site.
+    for (const b of BRAND_PROMPTS) {
+      expect(b.website, `${b.label} has no website`).toBeTruthy()
+      expect(b.website, `${b.label}: bare domain only, no scheme or path`).toMatch(
+        /^[a-z0-9.-]+\.[a-z]{2,}$/
+      )
+    }
+  })
+
+  it("bakes each brand's own address into its prompt", () => {
+    expect(bakeInstructions(SHARED, brand("The Launch Pad"))).toContain("thelaunchpadwash.com")
+    expect(bakeInstructions(SHARED, brand("Bucket Baddie"))).toContain("bucketbaddie.com")
+  })
+
+  it("never lets one brand's website reach the other", () => {
+    expect(bakeInstructions(SHARED, brand("The Launch Pad"))).not.toContain("bucketbaddie.com")
+    expect(bakeInstructions(SHARED, brand("Bucket Baddie"))).not.toContain("thelaunchpadwash.com")
+  })
+
+  it("throws if a brand is given another's website", () => {
+    // This is the check the displayName guard cannot make: "bucketbaddie.com"
+    // does not contain "Bucket Baddie", so without its own test it leaks quietly.
+    const poisoned = { ...brand("The Launch Pad"), website: "bucketbaddie.com" }
+    expect(() => bakeInstructions(SHARED, poisoned)).toThrow(
+      /carries Bucket Baddie's website/
+    )
+  })
+
+  it("forbids inventing a page on the end of the address", () => {
+    // A model that knows the domain will happily offer /booking or /prices,
+    // and a caller sent to a 404 is worse off than one given nothing.
+    const baked = bakeInstructions(SHARED, brand("The Launch Pad"))
+    expect(baked).toMatch(/Never add a page or a path to the end of it/)
+    expect(baked).not.toMatch(/thelaunchpadwash\.com\//)
+  })
+})
+
 describe("voiceSpeaksMoreThanOneLanguage", () => {
   it("every bilingual brand declares a voice that can actually speak the second language", () => {
     // The guard that matters. An English-only voice does not error — it reads
