@@ -258,11 +258,28 @@ async function ensureGroup(apiKey, insightId) {
  * rushed" stops being longer waits and becomes the wording in the HOW YOU SOUND
  * section of the prompt. Change that before lowering these any further.
  *
+ * VOICE_SPEED IS BACK TO 1 (2026-09-11), and the endpointing stays slow. These
+ * were two different fixes for one complaint and only the endpointing ones were
+ * ever the answer. "Rushed and robotic" was the assistant REPLYING a tenth of a
+ * second after the caller stopped — a latency problem, fixed by the four
+ * thresholds below. Dragging the speaking rate down to 0.85 came along for the
+ * ride and fixed nothing; it made the assistant talk like it was tired.
+ *
+ * It was also tuned by ear on KokoroTTS and never re-checked after the voice
+ * changed to Azure Ava on 2026-09-10. Azure applies rate as prosody scaling,
+ * which stretches the words themselves, and the client reported a dragging
+ * greeting the next morning. 0.85 also made every call ~18% longer, which is
+ * billed per minute.
+ *
+ * If someone wants it slower again: change the wording in HOW YOU SOUND first,
+ * then the endpointing. Reach for voice_speed last, and re-audition it against
+ * the voice actually in use rather than inheriting a number tuned for another.
+ *
  * The voice itself is NOT managed here — whichever voice is chosen in the
- * portal is preserved. Only the pacing fields are overwritten.
+ * portal is preserved, unless the brand declares one. Only pacing is overwritten.
  */
 const SPEECH = {
-  voice_speed: 0.85,
+  voice_speed: 1.0,
   wait_seconds: 0.8,
   on_punctuation_seconds: 0.5,
   on_no_punctuation_seconds: 1.2,
@@ -391,7 +408,7 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
     ["webhook", after.dynamic_variables_webhook_url === cfg.dynamic_variables_webhook_url],
     ["insight group", after.insight_settings?.insight_group_id === groupId],
     ["voice", after.voice_settings?.voice === wantedVoice],
-    ["speech slowed", after.voice_settings?.voice_speed === SPEECH.voice_speed],
+    ["speech rate", after.voice_settings?.voice_speed === SPEECH.voice_speed],
     [
       "waits before replying",
       after.interruption_settings?.start_speaking_plan?.wait_seconds === SPEECH.wait_seconds,
