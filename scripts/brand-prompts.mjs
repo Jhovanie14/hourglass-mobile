@@ -189,10 +189,16 @@ Do not comment on how spicy something is beyond the heat levels in the menu.`
 function languagePolicy(brand) {
   if (!brand.secondLanguage) return ""
   return `LANGUAGE
-This line is answered in English and ${brand.secondLanguage}. Reply in whichever
-language the caller uses, and switch the moment they switch — some callers open
-in one and move to the other mid-sentence. Never ask a caller to change
-language, and never apologise for the one they chose.
+This line is answered in English and ${brand.secondLanguage}, but it OPENS in
+English every time. Do not mention, offer, or switch to ${brand.secondLanguage}
+until the caller has used it themselves. Announcing it to an English speaker
+makes every call longer and makes you sound like a phone menu.
+
+The moment a caller speaks ${brand.secondLanguage} — a whole sentence, or a few
+words inside an English one — answer in ${brand.secondLanguage} and stay there
+until they switch back. Switch as often as they do. Never ask a caller to change
+language, never ask them to confirm which one they want, and never apologise for
+the one they chose. Just answer them.
 
 Two things stay in English inside a ${brand.secondLanguage} reply:
 - The name of every service and every plan, exactly as the pricing block writes
@@ -204,7 +210,8 @@ Two things stay in English inside a ${brand.secondLanguage} reply:
 Prices, hours, directions and everything else are spoken naturally in the
 caller's language, with numbers said the way that language says them.
 
-If you cannot tell which language they want, ask once, in both.`
+If you genuinely cannot make out what was said, ask them to repeat it — in the
+language they last used, not in both.`
 }
 
 /**
@@ -230,11 +237,18 @@ export function voiceSpeaksMoreThanOneLanguage(voice) {
 /**
  * What the caller hears before they have said anything.
  *
- * Nothing can be detected yet — the caller has not spoken — so a bilingual line
- * has to advertise itself here or the second language never gets used at all.
- * Deliberately NOT a full translation of the greeting: doubling it makes every
- * English caller sit through a Spanish paragraph. One short offer is enough to
- * tell a Spanish speaker they are in the right place.
+ * ENGLISH ONLY, even on a bilingual brand. The greeting carried a one-line
+ * Spanish offer for a day (2026-09-10) and it came straight back out: it made
+ * every English caller — nearly all of them — sit through an extra two seconds
+ * of a language they did not ask for, which is what a phone menu does, and the
+ * point of this assistant is to not sound like one.
+ *
+ * Nothing is lost by dropping it. A Spanish speaker does not need permission to
+ * speak Spanish; they just speak it, and the LANGUAGE section has the assistant
+ * follow them from the first words. The greeting was only ever advertising.
+ *
+ * `secondLanguageGreeting` is still honoured if a brand sets one, so this is a
+ * decision per brand rather than a capability that was removed.
  */
 export function greetingFor(brand) {
   const english = `Hi, thanks for calling ${brand.displayName}. Just so you know, this call may be recorded for quality. How can I help you today?`
@@ -283,7 +297,8 @@ export const BRAND_PROMPTS = [
     // Bilingual. Requires the live assistant to be off English-only STT and on
     // a multilingual voice — see docs/ai-receptionist-instructions.md §5.
     secondLanguage: "Spanish",
-    secondLanguageGreeting: "También le puedo atender en español.",
+    // No secondLanguageGreeting on purpose — see greetingFor. The line opens in
+    // English and follows the caller into Spanish only once they use it.
     // Declared here rather than left to the portal BECAUSE it is bilingual: the
     // previous voice (Telnyx.KokoroTTS.af_heart) is en-US only, and Kokoro's
     // voices are per-language, so no setting could have made it speak Spanish.

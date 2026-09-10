@@ -205,9 +205,18 @@ describe("bilingual brands", () => {
     expect(bb).not.toMatch(/\n{3,}/)
   })
 
-  it("tells the assistant to switch language mid-call, not to ask the caller to", () => {
+  it("opens in English and does not volunteer Spanish", () => {
+    // The client's instruction 2026-09-11: speak Spanish only once the caller
+    // does. Announcing it up front is what a phone menu does.
     const baked = bakeInstructions(SHARED, tlp())
-    expect(baked).toMatch(/switch the moment they switch/)
+    expect(baked).toMatch(/OPENS in\nEnglish every time/)
+    expect(baked).toMatch(/Do not mention, offer, or switch to Spanish\nuntil the caller has used it/)
+  })
+
+  it("still follows a caller who switches, in either direction", () => {
+    const baked = bakeInstructions(SHARED, tlp())
+    expect(baked).toMatch(/a few\nwords inside an English one/)
+    expect(baked).toMatch(/Switch as often as they do/)
     expect(baked).toMatch(/Never ask a caller to change\nlanguage/)
   })
 
@@ -267,17 +276,19 @@ describe("voiceSpeaksMoreThanOneLanguage", () => {
 })
 
 describe("greetingFor", () => {
-  it("advertises Spanish, because nothing can be detected before they speak", () => {
+  it("opens in English even on the bilingual brand", () => {
+    // Reversed 2026-09-11 on the client's instruction. The Spanish offer made
+    // every English caller — nearly all of them — sit through two seconds of a
+    // language they had not asked for, which is what a phone menu does.
     const greeting = greetingFor(brand("The Launch Pad"))
     expect(greeting).toContain("thanks for calling The Launch Pad")
-    expect(greeting).toContain("También le puedo atender en español.")
+    expect(greeting).not.toMatch(/español|espanol|puedo atender/i)
   })
 
-  it("does not make English callers sit through a full translation", () => {
-    // One short offer, not a doubled greeting.
-    const greeting = greetingFor(brand("The Launch Pad"))
-    expect(greeting.match(/thanks for calling/gi)).toHaveLength(1)
-    expect(greeting.length).toBeLessThan(200)
+  it("still knows how to advertise a second language if a brand asks for one", () => {
+    // The capability was not deleted, only switched off for The Launch Pad.
+    const optedIn = { ...brand("The Launch Pad"), secondLanguageGreeting: "Hablamos español." }
+    expect(greetingFor(optedIn)).toContain("Hablamos español.")
   })
 
   it("leaves a single-language brand's greeting untouched", () => {

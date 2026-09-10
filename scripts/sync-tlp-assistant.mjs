@@ -413,10 +413,16 @@ async function syncBrand(apiKey, brand, sharedBlock, groupId, env) {
     ...(brand.secondLanguage
       ? [
           ["prompt carries the LANGUAGE section", (after.instructions ?? "").includes("LANGUAGE")],
-          [
-            "greeting offers the second language",
-            (after.greeting ?? "").includes(brand.secondLanguageGreeting ?? " "),
-          ],
+          // Only a brand that opted into advertising its second language should
+          // carry it in the greeting, so this is asserted BOTH ways. The version
+          // this replaces fell back to `.includes(<one char>)` when no offer was
+          // configured, which passes on any greeting at all and proves nothing.
+          brand.secondLanguageGreeting
+            ? [
+                "greeting offers the second language",
+                (after.greeting ?? "").includes(brand.secondLanguageGreeting),
+              ]
+            : ["greeting opens in English only", (after.greeting ?? "") === greetingFor(brand)],
           ["no language_boost fighting the second language", !after.voice_settings?.language_boost],
         ]
       : []),

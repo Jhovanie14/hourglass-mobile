@@ -121,11 +121,13 @@ describe("the shared brand-agnostic block", () => {
     const block = extractInstructions(SHARED)
     for (const heading of [
       "HOW TO BE CONSISTENT",
+      "LISTENING FOR HOW THEY FEEL",
       "WHAT WE SELL AND WHAT IT COSTS",
       "HOURS",
       "DEALS",
       "TRANSFERS",
       "TAKING A MESSAGE",
+      "IF A CALLER IS ABUSIVE OR TURNS THE CALL SEXUAL",
       "WHAT NOT TO DO",
     ]) {
       expect(block).toContain(heading)
@@ -136,6 +138,51 @@ describe("the shared brand-agnostic block", () => {
     const block = extractInstructions(SHARED)
     expect(block).toContain("You cannot transfer this call")
     expect(block).not.toContain("use the transfer tool")
+  })
+
+  it("tells the assistant to answer the person, not just the question", () => {
+    const block = extractInstructions(SHARED)
+    expect(block).toContain("Answer the person, not only the question")
+    // The difference between empathy and a script reading empathy lines.
+    expect(block).toContain("Do not perform sympathy")
+    expect(block).toMatch(/Match their pace/)
+  })
+
+  // The section is read on its own because the rest of the prompt legitimately
+  // mentions hanging up — "Close the call warmly … before you hang up" — and a
+  // whole-block search for that phrase would match the good line.
+  const abuseSection = () => {
+    const block = extractInstructions(SHARED)
+    const start = block.indexOf("IF A CALLER IS ABUSIVE")
+    expect(start, "the abusive-caller section is missing").toBeGreaterThan(-1)
+    return block.slice(start, block.indexOf("WHAT NOT TO DO", start))
+  }
+
+  it("lets an ordinary swear go rather than policing the caller", () => {
+    // Someone frustrated is not abusing the receptionist, and pulling them up
+    // on it turns a recoverable call into a complaint.
+    const section = abuseSection()
+    expect(section).toMatch(/is not abusing you/)
+    expect(section).toMatch(/do not\s+ask them to mind their language/i)
+    expect(section).toMatch(/Do not turn cold on/)
+  })
+
+  it("never threatens a consequence the assistant cannot deliver", () => {
+    // Same class of bug as the old "use the transfer tool" line: a prompt that
+    // promises something the assistant has no way to do. It cannot report,
+    // flag, ban or escalate anyone, and The Launch Pad has NO hangup tool —
+    // verified live 2026-09-11, `tools: []` — so it must never say it is
+    // ending a call either.
+    const section = abuseSection()
+    expect(section).toMatch(/Never threaten a consequence you\s+cannot deliver/)
+    expect(section).toMatch(/you cannot report a caller/)
+    expect(section).not.toMatch(/end(ing)? the call|hang(ing)? up|disconnect/i)
+  })
+
+  it("does not lecture or repeat offensive language back", () => {
+    const block = extractInstructions(SHARED)
+    expect(block).toMatch(/Never repeat an offensive word back/)
+    expect(block).toMatch(/never lecture a\ncaller/)
   })
 
   it("handles an empty open_now rather than assuming a clock", () => {
