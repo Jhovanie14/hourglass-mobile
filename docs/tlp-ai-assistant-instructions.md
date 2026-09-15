@@ -137,9 +137,15 @@ it.
 
 ### `[OPTIONAL]` Recording disclosure
 
-The §1 block already opens with "This call may be recorded for quality
-purposes." Texas is one-party consent, but callers can be anywhere. Remove the
-sentence only if you have decided you don't want it.
+**Superseded 2026-09-15 — see `docs/ai-receptionist-instructions.md` §6.** The
+notice is no longer spoken. It was eleven of the greeting's 24 words, and the
+client asked for a shorter opening; the assistant now confirms recording plainly
+when a caller asks and never volunteers it. Set `spokenRecordingNotice: true` on
+a brand in `scripts/brand-prompts.mjs` to put it back in the greeting.
+
+The open question below still stands and is the client's to answer: Texas is
+one-party consent and the business is a party to its own calls, but callers can
+be anywhere, and some states are all-party. Ask before relying on silence.
 
 ---
 

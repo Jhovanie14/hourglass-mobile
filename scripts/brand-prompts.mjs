@@ -277,9 +277,39 @@ export function voiceSpeaksMoreThanOneLanguage(voice) {
  *
  * `secondLanguageGreeting` is still honoured if a brand sets one, so this is a
  * decision per brand rather than a capability that was removed.
+ *
+ * KEPT SHORT ON PURPOSE (2026-09-15, at the client's request). The line used to
+ * run 24 words — "Hi, thanks for calling X. Just so you know, this call may be
+ * recorded for quality. How can I help you today?" — roughly eight seconds the
+ * caller had to sit through before saying anything, on every single call. It is
+ * now nine words and about three. What went:
+ *
+ * - The recording notice, which was eleven of those words and the part no
+ *   caller rang up to hear. It moved into the instructions block as an
+ *   answer-if-asked rule, so the assistant still confirms it plainly the moment
+ *   anyone wants to know. Set `spokenRecordingNotice: true` on a brand to put
+ *   it back in the greeting as "This call is recorded." — one flag, in case
+ *   that brand's counsel wants it audible. It is deliberately not the default:
+ *   Texas is a one-party-consent state and the business is a party to its own
+ *   calls, but that is the client's call to make, not ours to make silently.
+ * - "Hi" in front of "thanks for calling", which no one says out loud, and
+ *   "today" on the end, which is filler that costs a beat.
+ * - "may be recorded", which hedged. If a brand wants it said, it is said
+ *   plainly or not at all — a caller who hears "may be" now has a question.
+ *
+ * `openingQuestion` is per brand because the right one depends on why people
+ * ring. A car wash gets mixed intent and wants the floor left open; a food
+ * truck is taking an order, and "what can I get you" is what the person at the
+ * window actually says. It is required rather than defaulted: a brand added
+ * without one should fail the sync, not quietly inherit a question that steers
+ * its callers wrong.
  */
 export function greetingFor(brand) {
-  const english = `Hi, thanks for calling ${brand.displayName}. Just so you know, this call may be recorded for quality. How can I help you today?`
+  if (!brand.openingQuestion) {
+    throw new Error(`${brand.label}: no openingQuestion — see greetingFor`)
+  }
+  const notice = brand.spokenRecordingNotice ? " This call is recorded." : ""
+  const english = `Thanks for calling ${brand.displayName}.${notice} ${brand.openingQuestion}`
   return brand.secondLanguageGreeting ? `${english} ${brand.secondLanguageGreeting}` : english
 }
 
@@ -318,6 +348,9 @@ export const BRAND_PROMPTS = [
     label: "The Launch Pad",
     slug: "the-launch-pad",
     displayName: "The Launch Pad",
+    // Left open: people ring a car wash about hours, prices and memberships in
+    // roughly equal measure, so there is no one thing to steer them towards.
+    openingQuestion: "How can I help?",
     assistantIdEnv: "TELNYX_AI_ASSISTANT_ID",
     rules: TLP_RULES,
     locationNote: LOCATIONS["The Launch Pad"],
@@ -338,6 +371,10 @@ export const BRAND_PROMPTS = [
     label: "Bucket Baddie",
     slug: "bucket-baddie",
     displayName: "Bucket Baddie",
+    // A food truck: nearly every call is an order, and this is what the person
+    // at the window says. It puts the caller straight into ordering instead of
+    // making them invent a reason for ringing.
+    openingQuestion: "What can I get you?",
     assistantIdEnv: "TELNYX_AI_ASSISTANT_ID_BUCKET_BADDIE",
     rules: BUCKET_BADDIE_RULES,
     locationNote: LOCATIONS["Bucket Baddie"],

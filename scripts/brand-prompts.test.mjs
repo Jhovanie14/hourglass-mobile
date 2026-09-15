@@ -321,7 +321,7 @@ describe("greetingFor", () => {
     // every English caller — nearly all of them — sit through two seconds of a
     // language they had not asked for, which is what a phone menu does.
     const greeting = greetingFor(brand("The Launch Pad"))
-    expect(greeting).toContain("thanks for calling The Launch Pad")
+    expect(greeting).toContain("Thanks for calling The Launch Pad")
     expect(greeting).not.toMatch(/español|espanol|puedo atender/i)
   })
 
@@ -331,16 +331,47 @@ describe("greetingFor", () => {
     expect(greetingFor(optedIn)).toContain("Hablamos español.")
   })
 
-  it("leaves a single-language brand's greeting untouched", () => {
-    const greeting = greetingFor(brand("Bucket Baddie"))
-    expect(greeting).toBe(
-      "Hi, thanks for calling Bucket Baddie. Just so you know, this call may be recorded for quality. How can I help you today?"
+  it("asks a food truck's callers what they want, not how it can help", () => {
+    // The closing question is per brand because intent is. Nearly every call to
+    // a food truck is an order, and this is what the person at the window says.
+    expect(greetingFor(brand("Bucket Baddie"))).toBe(
+      "Thanks for calling Bucket Baddie. What can I get you?"
+    )
+    expect(greetingFor(brand("The Launch Pad"))).toBe(
+      "Thanks for calling The Launch Pad. How can I help?"
     )
   })
 
-  it("still carries the recording notice on both brands", () => {
+  it("says no recording notice unless the brand asks for one", () => {
+    // Shortened 2026-09-15 on the client's instruction: the notice was eleven
+    // of the greeting's 24 words and the part no caller rang up to hear. It
+    // lives in §1's HOW TO BE CONSISTENT list now, answered when asked.
     for (const b of BRAND_PROMPTS) {
-      expect(greetingFor(b), b.label).toContain("may be recorded for quality")
+      expect(greetingFor(b), b.label).not.toMatch(/record/i)
     }
+  })
+
+  it("puts the notice back, unhedged, for a brand that opts in", () => {
+    // One flag, so a brand whose counsel wants it audible needs no rewrite.
+    // "is recorded", never "may be": calls ARE recorded on every answered call,
+    // and a hedge only invites a follow-up question.
+    const optedIn = { ...brand("Bucket Baddie"), spokenRecordingNotice: true }
+    expect(greetingFor(optedIn)).toBe(
+      "Thanks for calling Bucket Baddie. This call is recorded. What can I get you?"
+    )
+  })
+
+  it("stays short enough to talk over — the whole point of the rewrite", () => {
+    // The greeting is the one line every caller hears in full. The old one ran
+    // 24 words, about eight seconds of dead air before they could speak.
+    for (const b of BRAND_PROMPTS) {
+      expect(greetingFor(b).split(/\s+/).length, b.label).toBeLessThanOrEqual(12)
+    }
+  })
+
+  it("refuses to build a greeting for a brand with no opening question", () => {
+    // Fail the sync rather than inherit a question that steers callers wrong.
+    const { openingQuestion, ...incomplete } = brand("Bucket Baddie")
+    expect(() => greetingFor(incomplete)).toThrow(/openingQuestion/)
   })
 })

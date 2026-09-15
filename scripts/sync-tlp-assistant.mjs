@@ -53,7 +53,7 @@ const ASSISTANT_DESCRIPTION =
  * `pricing: null` — the first greets a chicken shop caller by a car wash's
  * name, the second risks rendering the literal string "null" into the prompt.
  *
- * Empty `brand_name` leaves the greeting as "Hi, thanks for calling." That is
+ * Empty `brand_name` leaves the greeting as "Thanks for calling." That is
  * slightly clipped, and it is the correct trade: a missing name is a stumble,
  * the wrong name is a different business.
  *

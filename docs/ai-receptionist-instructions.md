@@ -66,7 +66,8 @@ The **greeting** is built per brand by `greetingFor` in
 `scripts/brand-prompts.mjs` and overwritten on every sync, so a portal edit does
 not survive. It is not a template: the brand's own name is written into it at
 sync time. It opens in English for every brand, bilingual ones included — see
-§5 — unless that brand sets `secondLanguageGreeting`.
+§5 — unless that brand sets `secondLanguageGreeting`. It is deliberately short
+and carries no recording notice — see §6.
 
 Two places supply these: `startAIAssistantOnCall` at call-start, where the
 brand is certain, and the `/ai/variables` webhook, which tops up presence and
@@ -79,7 +80,7 @@ coupons and omits the brand keys when it can't tell who is calling. See
 
 ```
 You are the receptionist for {{ brand_name }}. You answer the phone, answer
-questions, and take messages. This call may be recorded for quality purposes.
+questions, and take messages.
 
 {{ brand_rules }}
 
@@ -148,6 +149,9 @@ Handle the same request the same way every time.
 - When you cannot help, say plainly what you do not have, then offer to take a
   message. Do not apologise repeatedly and do not pad the answer.
 - Before the call ends, ask whether there is anything else.
+- If someone asks whether the call is recorded, tell them plainly that it is,
+  answer any follow-up in one sentence, and carry straight on with what they
+  were asking. Never volunteer it unprompted and never apologise for it.
 
 WHAT WE SELL AND WHAT IT COSTS
 {{ pricing }}
@@ -328,4 +332,55 @@ brand sets one, so this is a per-brand decision rather than a removed feature.
 
 **Adding a brand:** set `secondLanguage` and a multilingual `voice`, then sync.
 Add `secondLanguageGreeting` only if that brand actually wants the second
-language announced up front.
+language announced up front. `openingQuestion` is required — see §6.
+
+---
+
+## §6 The greeting
+
+What the caller hears before they have said a word. Built by `greetingFor` in
+`scripts/brand-prompts.mjs`:
+
+```
+Thanks for calling {displayName}. {openingQuestion}
+```
+
+The Launch Pad: "Thanks for calling The Launch Pad. How can I help?"
+Bucket Baddie: "Thanks for calling Bucket Baddie. What can I get you?"
+
+**Shortened on 2026-09-15 at the client's request.** It previously ran 24 words
+— "Hi, thanks for calling X. Just so you know, this call may be recorded for
+quality. How can I help you today?" — which is about eight seconds of talking
+the caller sits through before they can start, on every call. It is now nine
+words and about three seconds. The greeting is the one line every single caller
+hears in full, so words here cost more than words anywhere else in the prompt.
+
+**The recording notice moved out of it.** It was eleven of those 24 words and
+the part nobody rang up to hear. The assistant now confirms recording plainly
+whenever a caller asks (the rule lives in the HOW TO BE CONSISTENT list in §1)
+and never volunteers it. Calls *are* recorded — `startAICallRecording` runs on
+every answered AI call — so the old "may be recorded" was hedging about
+something definite, which only invites a follow-up question.
+
+Set `spokenRecordingNotice: true` on a brand to put it back in the greeting, as
+"This call is recorded." It is off by default rather than removed: Texas is a
+one-party-consent state and the business is a party to its own calls, but
+whether to say it out loud is the client's decision, not one to take silently on
+their behalf. Ask before flipping it, and flip it per brand.
+
+**`openingQuestion` is per brand and required.** The right closing question
+depends on why people ring. A car wash takes mixed calls — hours, prices,
+memberships — and wants the floor left open. A food truck is taking an order,
+and "what can I get you" is what the person at the window says; it saves the
+caller from inventing a reason for ringing. A brand added without one throws at
+sync rather than inheriting a question that steers its callers wrong.
+
+Two things that were cut and should stay cut: "Hi" in front of "thanks for
+calling", which nobody says out loud, and "today" on the end of "how can I help
+you", which is filler that costs a beat and adds nothing.
+
+**Greeting length is not the same problem as barge-in.** A caller talking over
+the greeting is handled by `interruption_settings` in `sync-tlp-assistant.mjs`,
+and that tuning is delicate — endpointing that is too eager clips half a phone
+number. Shorten the greeting; leave the endpointing alone. They are separate
+fixes and only one of them is free.
