@@ -6,6 +6,8 @@ type Props = {
   callState: string
   duration: string
   remoteNumber: string
+  // Business line an inbound call came in on (e.g. "Bucket Baddie"); null for outbound.
+  lineLabel?: string | null
   muted: boolean
   speakText: string
   speaking: boolean
@@ -20,6 +22,7 @@ export function ActiveCallHud({
   callState,
   duration,
   remoteNumber,
+  lineLabel = null,
   muted,
   speakText,
   speaking,
@@ -56,6 +59,7 @@ export function ActiveCallHud({
       {/* Remote number */}
       <div className="px-4 py-3">
         <p className="text-base font-semibold">{remoteNumber}</p>
+        {lineLabel && <p className="text-sm text-muted-foreground">→ {lineLabel}</p>}
       </div>
 
       {/* Dialpad — intentionally shown before "active" so users can pre-dial IVR menus the moment a call connects */}

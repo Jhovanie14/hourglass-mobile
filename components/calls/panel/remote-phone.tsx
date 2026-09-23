@@ -142,6 +142,7 @@ export function RemotePhone({
           callState={state.status}
           duration={duration}
           remoteNumber={state.remoteNumber ?? "Unknown"}
+          lineLabel={state.companyLabel}
           muted={state.muted}
           speakText={speakText}
           speaking={false}

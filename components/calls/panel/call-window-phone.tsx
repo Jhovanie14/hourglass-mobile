@@ -70,6 +70,7 @@ export function CallWindowPhone(_props: { phoneNumbers: PhoneNumber[] }) {
         <InCallCard
           className="w-full max-w-sm"
           remoteNumber={state.remoteNumber ?? "Unknown"}
+          lineLabel={state.companyLabel}
           duration={duration}
           muted={state.muted}
           onToggleMute={() => send({ cmd: state.muted ? "unmute" : "mute" })}

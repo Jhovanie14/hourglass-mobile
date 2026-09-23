@@ -3,6 +3,8 @@ import { Mic, MicOff, PhoneOff } from "lucide-react"
 
 type Props = {
   remoteNumber: string
+  // Business line an inbound call came in on (e.g. "Bucket Baddie"); null for outbound.
+  lineLabel?: string | null
   duration: string
   muted: boolean
   onToggleMute: () => void
@@ -14,6 +16,7 @@ type Props = {
 
 export function InCallCard({
   remoteNumber,
+  lineLabel = null,
   duration,
   muted,
   onToggleMute,
@@ -25,7 +28,12 @@ export function InCallCard({
       className={`${className} overflow-hidden rounded-2xl border border-border bg-card shadow-2xl`}
     >
       <div className="flex items-center justify-between px-4 py-3">
-        <span className="text-sm font-semibold tabular-nums">{remoteNumber}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tabular-nums">{remoteNumber}</p>
+          {lineLabel && (
+            <p className="truncate text-xs text-muted-foreground">→ {lineLabel}</p>
+          )}
+        </div>
         <span className="text-xs font-medium text-green-600 tabular-nums dark:text-green-400">
           {duration}
         </span>

@@ -33,6 +33,7 @@ describe("dialAgentLeg", () => {
       callId: "call-1",
       didNumber: "+18326501126",
       callerNumber: "+15551234567",
+      lineLabel: "Bucket Baddie",
       sipUsername: "gencredXYZ",
       userId: "user-1",
     })
@@ -48,6 +49,26 @@ describe("dialAgentLeg", () => {
       callId: "call-1",
       userId: "user-1",
     })
+  })
+
+  it("carries the caller and the line it came in on as custom SIP headers", async () => {
+    dial.mockResolvedValue({ data: { call_control_id: "b-leg-1" } })
+
+    await dialAgentLeg({
+      aLegId: "a-1",
+      callId: "call-1",
+      didNumber: "+18322198320",
+      callerNumber: "+15551234567",
+      lineLabel: "The Launch Pad",
+      sipUsername: "gencredXYZ",
+      userId: "user-1",
+    })
+
+    expect(dial.mock.calls[0][0].custom_headers).toEqual([
+      { name: "X-Caller-Number", value: "+15551234567" },
+      { name: "X-Line-Label", value: "The Launch Pad" },
+      { name: "X-Line-Number", value: "+18322198320" },
+    ])
   })
 })
 

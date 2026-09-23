@@ -6,6 +6,7 @@ import { useRingtone } from "./use-ringtone"
 import { useDuration } from "./use-duration"
 import { useInboundPhoneLookup } from "./use-inbound-phone"
 import { useWebRTCClient } from "./use-webrtc-client"
+import { lineFromHeaders, sipHeader } from "./call-headers"
 import type { PhoneNumber } from "@/types/calls"
 
 /**
@@ -15,11 +16,7 @@ import type { PhoneNumber } from "@/types/calls"
  * absent (e.g. outbound legs), so callers can fall back.
  */
 function callerFromHeader(call: TelnyxCall | null): string | null {
-  const headers = (call?.options as any)?.customHeaders as
-    | Array<{ name?: string; value?: string }>
-    | undefined
-  const match = headers?.find((h) => h.name?.toLowerCase() === "x-caller-number")
-  return match?.value ?? null
+  return sipHeader(call, "X-Caller-Number")
 }
 
 /**
@@ -83,17 +80,23 @@ export function usePhone() {
       // Inbound ringing
       if (state === "ringing" && (call as any).direction !== "outbound") {
         if (activeCallRef.current) return
-        // Ring-all dials the agent leg with `from` = the owned DID the customer
-        // dialed, so the called number arrives as remoteCallerNumber (the SIP
-        // destination is just this agent's credential). Fall back to
-        // destinationNumber for any non-ring-all leg.
-        const dialedDid =
-          (call.options as any)?.remoteCallerNumber ??
-          (call.options as any)?.destinationNumber ??
-          ""
-        lookupInboundPhone(dialedDid).then((phoneNumber) => {
-          if (phoneNumber) setInboundPhoneNumber(phoneNumber)
-        })
+        // Which line (brand) the customer dialed: the voice webhook stamps it on
+        // the leg as X-Line-Label / X-Line-Number, so it's known synchronously.
+        const line = lineFromHeaders(call)
+        if (line) {
+          setInboundPhoneNumber(line)
+        } else {
+          // Legs without the headers (e.g. dialed by an older server build):
+          // ring-all sets `from` = the owned DID, which arrives as
+          // remoteCallerNumber; destinationNumber covers any non-ring-all leg.
+          const dialedDid =
+            (call.options as any)?.remoteCallerNumber ??
+            (call.options as any)?.destinationNumber ??
+            ""
+          lookupInboundPhone(dialedDid).then((phoneNumber) => {
+            if (phoneNumber) setInboundPhoneNumber(phoneNumber)
+          })
+        }
         setIncomingCall(call)
         startRing()
         return

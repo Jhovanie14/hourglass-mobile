@@ -71,6 +71,7 @@ export function WidgetPhone(_props: { phoneNumbers: PhoneNumber[] }) {
   return (
     <InCallCard
       remoteNumber={state.remoteNumber ?? "Unknown"}
+      lineLabel={state.companyLabel}
       duration={duration}
       muted={state.muted}
       onToggleMute={() => send({ cmd: state.muted ? "unmute" : "mute" })}

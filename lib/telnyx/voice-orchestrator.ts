@@ -40,6 +40,7 @@ export async function dialAgentLeg(params: {
   callId: string
   didNumber: string // owned DID the customer dialed (payload.to)
   callerNumber: string // customer's number, shown as caller ID
+  lineLabel: string // phone_numbers.label of the DID (e.g. "Bucket Baddie")
   sipUsername: string // THIS agent's sip_username (agent_sip_credentials)
   userId: string // THIS agent's user_id
   timeoutSecs?: number // ring time before this leg gives up
@@ -60,7 +61,13 @@ export async function dialAgentLeg(params: {
       // DID, not the customer. Telnyx does NOT surface from_display_name to the
       // WebRTC client either, so pass the customer's number as a custom SIP header
       // the softphone reads to show who's actually calling.
-      custom_headers: [{ name: "X-Caller-Number", value: params.callerNumber }],
+      // The line (brand) rides along the same way: the softphone cannot look it
+      // up itself — phone_numbers is RLS-protected from the browser.
+      custom_headers: [
+        { name: "X-Caller-Number", value: params.callerNumber },
+        { name: "X-Line-Label", value: params.lineLabel },
+        { name: "X-Line-Number", value: params.didNumber },
+      ],
       timeout_secs: params.timeoutSecs ?? DEFAULT_RING_TIMEOUT_SECS,
       command_id: commandId(),
       client_state: encodeClientState({

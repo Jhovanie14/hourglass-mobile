@@ -5,9 +5,11 @@ import { useCallback, useMemo } from "react"
 import { createClient } from "@/lib/client"
 
 /**
- * Look up the business phone number an inbound call came in on, for display in
- * the incoming-call popup. Read-only — call records are written server-side by
- * the Telnyx voice webhook (the single source of truth), not the client.
+ * Fallback lookup of the business line an inbound call came in on, for legs
+ * that arrive without the X-Line-Label/X-Line-Number headers. Goes through the
+ * auth-gated /api/calls/phone-numbers route: phone_numbers is RLS-protected, so
+ * a direct browser query comes back empty and the popup silently loses the
+ * brand. Read-only — call records are written server-side by the voice webhook.
  */
 export function useInboundPhoneLookup() {
   const supabase = useMemo(() => createClient(), [])
@@ -18,16 +20,28 @@ export function useInboundPhoneLookup() {
     ): Promise<{ label: string; phone_number: string } | null> => {
       // Normalize to E.164: strip non-digits, prepend "+".
       const digits = rawDestination.replace(/\D/g, "")
-      const normalized = digits ? `+${digits}` : rawDestination
+      if (!digits) return null
+      const normalized = `+${digits}`
 
-      const { data } = await supabase
-        .from("phone_numbers")
-        .select("label, phone_number")
-        .eq("phone_number", normalized)
-        .eq("is_active", true)
-        .maybeSingle()
-
-      return data as { label: string; phone_number: string } | null
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const res = await fetch("/api/calls/phone-numbers", {
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
+        })
+        if (!res.ok) return null
+        const { phoneNumbers } = (await res.json()) as {
+          phoneNumbers: Array<{ label: string; phone_number: string }>
+        }
+        const match = phoneNumbers.find((p) => p.phone_number === normalized)
+        return match ? { label: match.label, phone_number: match.phone_number } : null
+      } catch (err) {
+        console.warn("Inbound line lookup failed", err)
+        return null
+      }
     },
     [supabase]
   )

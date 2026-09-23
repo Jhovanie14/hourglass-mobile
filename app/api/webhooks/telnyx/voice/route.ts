@@ -248,6 +248,7 @@ async function handleCallInitiated(supabase: SupabaseClient, payload: TelnyxCall
         callId: call.id,
         didNumber: payload.to,
         callerNumber: payload.from,
+        lineLabel: phoneNumber.label,
         sipUsername: a.sipUsername,
         userId: a.userId,
         ...(aiBrand && aiSettings ? { timeoutSecs: aiSettings.ringTimeoutSecs } : {}),

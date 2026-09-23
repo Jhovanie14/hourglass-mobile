@@ -64,6 +64,7 @@ export function WebRTCProvider({ children }: { children: React.ReactNode }) {
           callState={phone.callState}
           duration={phone.duration}
           remoteNumber={phone.activeNumber}
+          lineLabel={phone.inboundPhoneNumber?.label ?? null}
           muted={phone.muted}
           speakText={phone.speakText}
           speaking={phone.speaking}
