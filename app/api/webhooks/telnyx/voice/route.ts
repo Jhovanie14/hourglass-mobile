@@ -3,6 +3,7 @@ import { enqueueJadesDelivery } from "@/lib/jades/notify"
 import type { Notification } from "@/types/notifications"
 import { verifyTelnyxWebhook } from "@/lib/telnyx/webhook"
 import { decodeClientState } from "@/lib/telnyx/client-state"
+import { recordingFormat } from "@/lib/telnyx/recording-format"
 import {
   answerCaller,
   dialAgentLeg,
@@ -653,17 +654,19 @@ async function handleRecordingSaved(supabase: SupabaseClient, payload: TelnyxCal
 
   if (call.has_voicemail) return // idempotency: already processed
 
-  // Copy the MP3 into the private bucket; fall back to the Telnyx URL on failure
-  // so a voicemail is never lost.
+  // Copy the recording into the private bucket, labelled as what it really is
+  // (mp3, or the WAV Telnyx sometimes sends instead); fall back to the Telnyx
+  // URL on failure so a voicemail is never lost.
   let storagePath: string | null = null
   try {
     const res = await fetch(recordingUrl)
     if (!res.ok) throw new Error(`download failed: ${res.status}`)
     const bytes = new Uint8Array(await res.arrayBuffer())
-    const path = `${call.id}.mp3`
+    const format = recordingFormat(bytes)
+    const path = `${call.id}.${format.ext}`
     const { error: upErr } = await supabase.storage
       .from("voicemails")
-      .upload(path, bytes, { contentType: "audio/mpeg", upsert: true })
+      .upload(path, bytes, { contentType: format.contentType, upsert: true })
     if (upErr) throw upErr
     storagePath = path
   } catch (err) {
@@ -745,10 +748,11 @@ async function handleAIRecordingSaved(
     const res = await fetch(recordingUrl)
     if (!res.ok) throw new Error(`download failed: ${res.status}`)
     const bytes = new Uint8Array(await res.arrayBuffer())
-    const path = `${call.id}.mp3`
+    const format = recordingFormat(bytes)
+    const path = `${call.id}.${format.ext}`
     const { error: upErr } = await supabase.storage
       .from("call-recordings")
-      .upload(path, bytes, { contentType: "audio/mpeg", upsert: true })
+      .upload(path, bytes, { contentType: format.contentType, upsert: true })
     if (upErr) throw upErr
 
     const { error: updErr } = await supabase
